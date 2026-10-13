@@ -428,7 +428,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-13.2340</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-14.0120</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -6461,37 +6461,90 @@
     return pack({ d: peer.pc.localDescription.toJSON() });
   }
   // ---- short number codes: the offer and reply are passed through the shared database (when the page has one) and a public relay ----
-  const RELAY = "https://ntfy.sh/";
-  const sigTopic = (code, slot, kind) => "bsh3d" + code + "s" + slot + kind;
+  // The code relay. One public host can rate limit a busy game, so there is a list and the one
+  // that answers is remembered. Everything about a room goes through two topics, not six, because
+  // the old one-topic-per-seat polling burned through an anonymous allowance in under a minute.
+  const RELAYS = ["https://ntfy.sh/", "https://ntfy.envs.net/", "https://ntfy.tedomum.net/"];
+  let RELAY = RELAYS[0];
+  try { const r = localStorage.getItem("shooter.relay"); if (r && RELAYS.includes(r)) RELAY = r; } catch (_) {}
+  const sigTopic = (code, kind) => "bsh3d" + code + kind;
   const fetchT = async (url, opts, ms = 8000) => { const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms); try { return await fetch(url, { ...opts, signal: ac.signal }); } finally { clearTimeout(t); } };
+  let relayNote = "";                       // what went wrong last, in words a player can act on
+  async function relayFetch(path, opts, ms) {
+    // try the remembered host first, then the others; remember whichever answers
+    const order = [RELAY, ...RELAYS.filter(r => r !== RELAY)];
+    let lastNote = "";
+    for (const host of order) {
+      try {
+        const r = await fetchT(host + path, opts, ms);
+        if (r.ok) {
+          if (host !== RELAY) { RELAY = host; try { localStorage.setItem("shooter.relay", host); } catch (_) {} }
+          relayNote = ""; return r;
+        }
+        lastNote = r.status === 429
+          ? "The relay is asking us to slow down (too many requests from this address). Wait a minute and try again."
+          : "The relay answered with an error " + r.status + ".";
+      } catch (e) {
+        lastNote = e && e.name === "AbortError" ? "The relay did not answer in time." : "The relay could not be reached. A school, work or phone network, or an ad blocker, may be blocking it.";
+      }
+    }
+    relayNote = lastNote; return null;
+  }
+  // a seat's offer or answer is one line on a shared topic: "<slot>:<payload>"
+  async function sigPost(code, kind, slot, val) {
+    const r = await relayFetch(sigTopic(code, kind), { method: "POST", body: slot + ":" + val }, 9000);
+    return !!r;
+  }
+  async function sigList(code, kind) {
+    const out = new Map();
+    if (shared.db) try {
+      const sn = await shared.db.collection("rooms").doc(code + kind).get();
+      if (sn.exists) { const d = sn.data() || {}; Object.keys(d).forEach(k => { if (/^s\d$/.test(k) && typeof d[k] === "string") out.set(+k[1], d[k]); }); }
+    } catch (_) {}
+    const r = await relayFetch(sigTopic(code, kind) + "/json?poll=1&since=all", {}, 9000);
+    if (r) {
+      const text = await r.text();
+      for (const ln of text.split("\n")) {
+        if (!ln) continue;
+        try {
+          const j = JSON.parse(ln);
+          if (j.event !== "message" || typeof j.message !== "string") continue;
+          const c = j.message.indexOf(":");
+          if (c > 0) { const sl = +j.message.slice(0, c); if (sl >= 1 && sl <= 3 && !out.has(sl)) out.set(sl, j.message.slice(c + 1)); }
+        } catch (_) {}
+      }
+    }
+    return out;
+  }
   async function sigPut(code, slot, kind, val) {
     let ok = false;
-    if (shared.db && shared.canWrite) try { await shared.db.doc("rooms/" + code + "-" + slot + "-" + kind).set({ v: val, t: Date.now() }); ok = true; } catch (_) {}
-    for (let attempt = 0; attempt < 3 && !ok; attempt++) {   // a weak connection drops requests: try again a couple of times
-      try { const r = await fetchT(RELAY + sigTopic(code, slot, kind), { method: "POST", body: val }, 9000); if (r.ok) ok = true; } catch (_) {}
-      if (!ok) await new Promise(r => setTimeout(r, 600));
-    }
+    if (shared.db && shared.canWrite) try { await shared.db.collection("rooms").doc(code + kind).set({ ["s" + slot]: val, t: Date.now() }, { merge: true }); ok = true; } catch (_) {}
+    if (!ok) ok = await sigPost(code, kind, slot, val);
     return ok;
   }
-  async function sigGet(code, slot, kind) {
-    if (shared.db) try { const sn = await shared.db.doc("rooms/" + code + "-" + slot + "-" + kind).get(); if (sn.exists) { const d = sn.data(); if (d && typeof d.v === "string" && d.v) return d.v; } } catch (_) {}
-    try {
-      const r = await fetchT(RELAY + sigTopic(code, slot, kind) + "/json?poll=1&since=all", {}, 9000); if (!r.ok) return null;
-      const lines = (await r.text()).split("\n").filter(Boolean); let last = null;
-      for (const ln of lines) { try { const j = JSON.parse(ln); if (j.event === "message" && typeof j.message === "string") last = j.message; } catch (_) {} }
-      return last;
-    } catch (_) { return null; }
-  }
+  const relayWhy = () => relayNote ? " " + relayNote : " Check your internet, or use the copy and paste codes.";
   // a quick self test so you can see what is wrong with the connection
   async function diagnose(out) {
     const lines = []; const show = () => { out.textContent = lines.join("\n"); };
     lines.push(navigator.onLine === false ? "\u2717 The browser says you are offline." : "\u2713 The browser says you are online."); show();
-    let t0 = performance.now();
-    try { const r = await fetchT(RELAY + "bsh3d-test/json?poll=1", {}, 9000); lines.push((r.ok ? "\u2713" : "\u2717") + " Code relay (ntfy.sh): " + (r.ok ? "reachable" : "answered with an error " + r.status) + " in " + Math.round(performance.now() - t0) + " ms"); if (r.ok && performance.now() - t0 > 3000) lines.push("   That is slow. Codes may take a while or time out."); }
-    catch (e) { lines.push("\u2717 Code relay (ntfy.sh): could not connect (" + (e && e.name === "AbortError" ? "timed out after 9 s" : "blocked or offline") + "). A school, work or phone network may block it; try another network or a hotspot, or use the copy and paste codes."); }
+    for (const host of RELAYS) {
+      const t0 = performance.now();
+      try {
+        const r = await fetchT(host + "bsh3d-test/json?poll=1", {}, 9000);
+        const ms = Math.round(performance.now() - t0);
+        if (r.ok) {
+          lines.push("\u2713 Code relay " + host.replace(/https:\/\/|\//g, "") + ": reachable in " + ms + " ms" + (ms > 3000 ? " (slow, codes may time out)" : ""));
+          if (RELAY !== host) { RELAY = host; try { localStorage.setItem("shooter.relay", host); } catch (_) {} }
+        } else if (r.status === 429) lines.push("\u2717 Code relay " + host.replace(/https:\/\/|\//g, "") + ": asking us to slow down (429). Too many games from this address: wait a minute.");
+        else lines.push("\u2717 Code relay " + host.replace(/https:\/\/|\//g, "") + ": answered with an error " + r.status + ".");
+      } catch (e) {
+        lines.push("\u2717 Code relay " + host.replace(/https:\/\/|\//g, "") + ": " + (e && e.name === "AbortError" ? "no answer in 9 s" : "could not connect") + " (a school, work or phone network, or an ad blocker, may be blocking it).");
+      }
+      show();
+    }
     show();
     if (typeof RTCPeerConnection === "undefined") { lines.push("\u2717 This browser has no peer-to-peer support."); show(); return; }
-    t0 = performance.now(); const pc = new RTCPeerConnection(ICE); let srflx = 0, host = 0, relayc = 0;
+    const t0 = performance.now(); const pc = new RTCPeerConnection(ICE); let srflx = 0, host = 0, relayc = 0;
     pc.createDataChannel("t"); pc.onicecandidate = e => { if (e.candidate) { const m = / typ (\w+)/.exec(e.candidate.candidate); if (m) { if (m[1] === "srflx") srflx++; else if (m[1] === "host") host++; else if (m[1] === "relay") relayc++; } } };
     try { await pc.setLocalDescription(await pc.createOffer()); await new Promise(res => { const iv = setInterval(() => { if (pc.iceGatheringState === "complete" || performance.now() - t0 > 6000) { clearInterval(iv); res(); } }, 100); }); } catch (_) {}
     pc.close();
@@ -6504,36 +6557,53 @@
     if (hostRoom) hostRoom.stop = true;
     net.host = true; net.myId = 0; net.name = profile.name; net.names.set(0, net.name); net.profiles.set(0, { name: net.name, pic: profile.pic });
     let code = "";
-    for (let tries = 0; tries < 6; tries++) { code = String(10000000 + Math.floor(Math.random() * 89999999)); if (!(await sigGet(code, 1, "o"))) break; }
+    for (let tries = 0; tries < 6; tries++) {
+      code = String(10000000 + Math.floor(Math.random() * 89999999));
+      const taken = await sigList(code, "o");
+      if (!taken.size) break;
+    }
     const room = hostRoom = { code, stop: false, slots: [] };
-    // make the three seats at the same time; the code is shown as soon as the first seat is ready
     const makeSeat = async sl => {
       const peer = newPeer(net.nextId++); net.peers.set(peer.id, peer);
       wireChannel(peer, peer.pc.createDataChannel("g"));
       await peer.pc.setLocalDescription(await peer.pc.createOffer()); await gathered(peer.pc);
       const offer = await pack({ d: peer.pc.localDescription.toJSON(), i: peer.id });
-      if (!(await sigPut(code, sl, "o", offer))) throw new Error("Could not reach the code relay. Check your internet, or use the copy and paste codes.");
+      if (!(await sigPut(code, sl, "o", offer))) throw new Error("Could not reach the code relay." + relayWhy());
       room.slots.push({ sl, peer, done: false });
     };
-    const seats = [1, 2, 3].map(sl => makeSeat(sl));
-    await seats[0]; seats.slice(1).forEach(p => p.catch(() => {}));
+    await makeSeat(1);                       // the code is live as soon as the first seat is posted
+    (async () => { for (const sl of [2, 3]) { if (room.stop) return; try { await makeSeat(sl); } catch (_) {} await new Promise(r => setTimeout(r, 900)); } })();
     (async () => {
-      const t0 = Date.now();
+      // one request per cycle, slowing down while nobody is joining, so a public relay stays happy
+      const t0 = Date.now(); let wait = 2500;
       while (!room.stop && Date.now() - t0 < 15 * 60 * 1000 && (room.slots.length < 3 || room.slots.some(x => !x.done))) {
-        for (const x of room.slots) if (!x.done) { const a = await sigGet(code, x.sl, "a"); if (a) { x.done = true; try { await x.peer.pc.setRemoteDescription((await unpack(a)).d); } catch (_) {} } }
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, wait));
+        if (room.stop) return;
+        const answers = await sigList(code, "a");
+        let got = false;
+        for (const x of room.slots) {
+          if (x.done) continue;
+          const a = answers.get(x.sl);
+          if (!a) continue;
+          x.done = true; got = true;
+          try { await x.peer.pc.setRemoteDescription((await unpack(a)).d); } catch (_) {}
+        }
+        wait = got ? 2500 : Math.min(12000, wait * 1.4);
       }
     })();
     return code;
   }
   async function joinByCode(code, tried) {
     code = String(code).replace(/\D/g, ""); if (code.length < 4) throw new Error("Type the host's number code.");
+    const offers = await sigList(code, "o");
+    if (!offers.size) throw new Error(relayNote ? "Could not reach the code relay." + relayWhy() : "No game found with that code. Check the number with whoever is hosting.");
+    const answers = await sigList(code, "a");
     for (let sl = 1; sl <= 3; sl++) {
-      const offer = await sigGet(code, sl, "o"); if (!offer) { if (sl === 1) throw new Error("No game found with that code. Check the number and your internet."); break; }
-      if (tried.has(sl) || await sigGet(code, sl, "a")) continue;
+      const offer = offers.get(sl);
+      if (!offer || tried.has(sl) || answers.has(sl)) continue;
       tried.add(sl);
       const reply = await clientJoin(offer);
-      if (!(await sigPut(code, sl, "a", reply))) throw new Error("Could not reach the code relay.");
+      if (!(await sigPut(code, sl, "a", reply))) throw new Error("Could not reach the code relay." + relayWhy());
       return;
     }
     throw new Error("That game is full.");
@@ -6560,7 +6630,7 @@
     const sel = document.getElementById("o-modesel");
     const body = JSON.stringify({ c: publicRoom.code, n: (profile.name || "Player").slice(0, 16), p: roomPlayers(),
       m: sel && sel.value === "coop" ? "coop" : "dm", g: net.started ? 1 : 0, k: selectedMap, t: Date.now() });
-    try { await fetchT(RELAY + LOBBY, { method: "POST", body }, 8000); } catch (_) {}
+    await relayFetch(LOBBY, { method: "POST", body }, 8000);
   }
   function stopAnnouncing() {
     if (!publicRoom) return;
@@ -6577,8 +6647,8 @@
     }, 11000);
   }
   async function listPublicRooms() {
-    const r = await fetchT(RELAY + LOBBY + "/json?poll=1&since=5m", {}, 10000);
-    if (!r.ok) return [];
+    const r = await relayFetch(LOBBY + "/json?poll=1&since=5m", {}, 10000);
+    if (!r) return [];
     const best = new Map();
     for (const ln of (await r.text()).split("\n")) {
       if (!ln) continue;
