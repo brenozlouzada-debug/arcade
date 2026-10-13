@@ -7,4 +7,5 @@
 - `/` — the arcade, every game
 - `/shooter.html` — the 3D Shooter on its own
 
-Everything runs in the browser. Nothing to install, no account needed.
+Served by GitHub Pages from the `gh-pages` branch. Everything runs in the
+browser: nothing to install, no account needed.
