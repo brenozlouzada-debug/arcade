@@ -428,7 +428,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-13.1510</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-13.2340</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -488,6 +488,10 @@
   const cylG = (rt, rb, h, seg = 10) => {
     const k = "c" + rt + "," + rb + "," + h + "," + seg;
     return geoCache[k] || (geoCache[k] = new THREE.CylinderGeometry(rt, rb, h, seg));
+  };
+  const shellG = (r, len, t0, tl, seg = 16) => {
+    const k = "sh" + r + "," + len + "," + t0 + "," + tl + "," + seg;
+    return geoCache[k] || (geoCache[k] = new THREE.CylinderGeometry(r, r, len, seg, 1, true, t0, tl));
   };
   const sphG = (r, w = 10, h = 7, ph = Math.PI * 2, pl = Math.PI) => {
     const k = "s" + r + "," + w + "," + h + "," + ph + "," + pl;
@@ -6987,63 +6991,225 @@
 
   // ---- the dog: trots after you everywhere, and nothing in the game can hurt it ----
   let dog = null;
+  // ---- the dog: a modelled mesh, swept along the spine from real cross sections ----
+  // Every part is one continuous smooth surface. A section can be deeper below the spine
+  // than above it (ryT / ryB), which is what gives a dog its deep chest and flat back.
+  // The coat markings are painted into the vertices, so nothing is stuck on as a separate lump.
+  const DOGC = { coat: 0x6d4525, dark: 0x3f2611, tan: 0xa26c38, white: 0xf4efe6, nose: 0x191210 };
+  function sweepHull(sections, colorAt, seg = 16, capStart = true, capEnd = true) {
+    const pos = [], col = [], idx = [], tmp = new THREE.Color(), V = THREE.Vector3;
+    let carry = null, prevT = null;
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i], c = new V(s.c[0], s.c[1], s.c[2]);
+      const a = sections[Math.max(0, i - 1)], b = sections[Math.min(sections.length - 1, i + 1)];
+      const t = new V(b.c[0] - a.c[0], b.c[1] - a.c[1], b.c[2] - a.c[2]).normalize();
+      // the frame is carried along the spine from the section before it, turned by just enough
+      // to follow the bend. Picking it fresh each time makes a vertical limb spin and tear.
+      if (!carry) {
+        const ref = Math.abs(t.y) > .7 ? new V(0, 0, 1) : new V(0, 1, 0);
+        carry = new V().crossVectors(ref, t);
+        if (carry.lengthSq() < 1e-6) carry = new V(1, 0, 0);
+        carry.normalize();
+      } else if (prevT) {
+        carry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(prevT, t));
+      }
+      carry.addScaledVector(t, -carry.dot(t)).normalize();     // keep it square to the spine
+      prevT = t.clone();
+      const right = carry.clone();
+      const up = new V().crossVectors(t, right).normalize();
+      const box = s.box || 0, sq = x => Math.sign(x) * Math.pow(Math.abs(x), 1 - box * .4);
+      for (let j = 0; j < seg; j++) {
+        const ang = j / seg * Math.PI * 2, w = Math.cos(ang), h = Math.sin(ang);
+        const ry = h >= 0 ? (s.ryT != null ? s.ryT : s.ry != null ? s.ry : s.rx) : (s.ryB != null ? s.ryB : s.ry != null ? s.ry : s.rx);
+        // coat sections get a ragged edge, so fur reads as fur and not as shrink wrap
+        const fz = s.fuzz ? 1 + s.fuzz * ((Math.sin(j * 127.1 + i * 31.7) * 43758.5453) % 1) : 1;
+        const v = c.clone().addScaledVector(right, sq(w) * s.rx * fz).addScaledVector(up, sq(h) * ry * fz);
+        pos.push(v.x, v.y, v.z);
+        tmp.set(colorAt(v, h, w, i / (sections.length - 1), s)); col.push(tmp.r, tmp.g, tmp.b);
+      }
+    }
+    for (let i = 0; i < sections.length - 1; i++) for (let j = 0; j < seg; j++) {
+      const a = i * seg + j, b = i * seg + (j + 1) % seg, c = (i + 1) * seg + j, d = (i + 1) * seg + (j + 1) % seg;
+      idx.push(a, c, b, b, c, d);
+    }
+    const capAt = (ri, out) => {
+      const s = sections[ri], c = new V(s.c[0], s.c[1], s.c[2]), base = pos.length / 3;
+      pos.push(c.x, c.y, c.z); tmp.set(colorAt(c, 0, 0, ri / (sections.length - 1), s)); col.push(tmp.r, tmp.g, tmp.b);
+      for (let j = 0; j < seg; j++) { const a = ri * seg + j, b = ri * seg + (j + 1) % seg; out ? idx.push(base, b, a) : idx.push(base, a, b); }
+    };
+    if (capStart) capAt(0, false);
+    if (capEnd) capAt(sections.length - 1, true);
+    const gm = new THREE.BufferGeometry();
+    gm.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    gm.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    gm.setIndex(idx); gm.computeVertexNormals();
+    return gm;
+  }
   function buildDog() {
     const g = new THREE.Group();
-    const M = (c, r = .85, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
-    // a brown and white border collie: chocolate coat, white blaze, ruff, socks and tail tip
-    const fur = M(0x6e4524), furD = M(0x53331a), furL = M(0x8a5a2e), white = M(0xf2ece0, .9), nose = M(0x3a2418, .5), eye = M(0x2b1a0e, .3, .25);
-    const collar = M(0x3f78c4, .7, .1), tagM = M(0xd9b23a, .3, .8);
-    const add = (parent, geo, mat, x, y, z, rx, ry, rz) => {
-      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z);
-      if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0);
-      m.castShadow = !COARSE; parent.add(m); return m;
+    const fur = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .93, metalness: 0, side: THREE.DoubleSide });
+    const furTwoSided = fur;
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x120c07, roughness: .15, metalness: .2 });
+    const shineMat = new THREE.MeshBasicMaterial({ color: 0xf6f2ea });
+    const SEG = COARSE ? 12 : 22, LSEG = COARSE ? 8 : 14;
+    const mesh = (geo, parent) => { const m = new THREE.Mesh(geo, fur); m.castShadow = !COARSE; (parent || g).add(m); return m; };
+    const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), Math.max(0, Math.min(1, t)));
+    const sm = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+
+    // ---------- body: tail root, croup, loin tuck, deep ribcage, shoulder, arched neck ----------
+    const bodyPaint = (v, h, w, t, sec) => {
+      const z = v.z;
+      const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
+      const xr = Math.abs(v.x) / (sec.rx || 1);          // how far round the side the vertex sits
+      const under = sm(-.45, -.75, yr) * (1 - sm(.45, .8, xr));   // the underside strip only
+      let c = DOGC.coat;
+      c = mix(c, DOGC.dark, sm(.15, .7, yr) * .95 * sm(-.37, -.28, z) * (1 - sm(.24, .36, z)));   // mantle down the back
+      c = mix(c, DOGC.tan, sm(.1, -.5, yr) * .28 * sm(-.3, -.1, z) * (1 - sm(.04, .24, z)));       // warm flank
+      c = mix(c, DOGC.white, under * sm(-.18, -.02, z) * (1 - sm(.2, .3, z)));                     // white belly strip
+      c = mix(c, DOGC.white, sm(.3, .4, z) * sm(.3, -.3, yr) * (1 - sm(.75, .95, xr)));            // white collar
+      c = mix(c, DOGC.white, sm(.14, .26, z) * sm(-.2, -.6, yr) * (1 - sm(.6, .9, xr)));           // white chest
+      c = mix(c, DOGC.dark, sm(.36, .44, z) * sm(.35, .85, yr) * .85);                             // dark crest of the neck
+      return c;
     };
-    const fine = !COARSE;
     const body = new THREE.Group(); g.add(body);
-    // a collie is longer and lighter than a lab: deep chest, tucked waist
-    add(body, cylG(.165, .185, .58, 10), fur, 0, .52, .02, Math.PI / 2).scale.set(.95, 1, .9);
-    add(body, sphG(.185, 10, 8), fur, 0, .53, -.24);                      // haunches
-    add(body, sphG(.175, 10, 8), fur, 0, .54, .27);                       // shoulders
-    add(body, cylG(.145, .16, .5, 10), furD, 0, .61, -.02, Math.PI / 2).scale.set(1, 1, .5);    // dark saddle over the back
-    // the white chest and ruff a collie is known for
-    add(body, sphG(.15, 10, 8), white, 0, .47, .3).scale.set(.95, 1.05, .8);
-    add(body, cylG(.14, .11, .2, 10), white, 0, .58, .33, .45);           // ruff running up the throat
-    add(body, cylG(.13, .13, .22, 8), white, 0, .42, .06, Math.PI / 2).scale.set(.85, 1, .55);  // belly
-    // neck and head: longer, narrower muzzle than a retriever
-    const head = new THREE.Group(); head.position.set(0, .75, .4); body.add(head);
-    add(body, cylG(.095, .13, .24, 8), fur, 0, .66, .32, .5);             // neck
-    add(head, sphG(.125, 10, 8), fur, 0, 0, 0).scale.set(1, .95, 1.1);    // skull
-    add(head, boxG(.095, .085, .22), fur, 0, -.05, .19);                  // muzzle
-    add(head, boxG(.082, .04, .15), white, 0, -.088, .16);                // white under the chin
-    add(head, boxG(.055, .1, .23), white, 0, .02, .17);                   // the blaze straight down the face
-    add(head, sphG(.032, 8, 6), nose, 0, -.015, .3);
+    mesh(sweepHull([
+      { c: [0, .478, -.36], rx: .075, ryT: .065, ryB: .075 },
+      { c: [0, .472, -.29], rx: .132, ryT: .092, ryB: .14 },
+      { c: [0, .462, -.19], rx: .152, ryT: .1, ryB: .175, box: .25 },
+      { c: [0, .458, -.07], rx: .134, ryT: .09, ryB: .158, box: .35 },
+      { c: [0, .452, .04], rx: .15, ryT: .104, ryB: .198, box: .45 },
+      { c: [0, .448, .15], rx: .156, ryT: .108, ryB: .222, box: .45 },   // deepest point, down at the elbow
+      { c: [0, .452, .25], rx: .15, ryT: .114, ryB: .205, box: .3 },
+      { c: [0, .478, .32], rx: .128, ryT: .102, ryB: .168 },
+      { c: [0, .532, .365], rx: .118, ryT: .094, ryB: .13 },             // base of the neck, thick with ruff
+      { c: [0, .585, .4], rx: .1, ryT: .082, ryB: .105 },
+      { c: [0, .632, .428], rx: .088, ryT: .073, ryB: .088 },
+    ], bodyPaint, SEG), body);
+
+    // ---------- head ----------
+    const headPaint = (v, h, w, t, sec) => {
+      const z = v.z, side = Math.abs(v.x);
+      const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
+      let c = mix(DOGC.coat, DOGC.dark, sm(.25, .85, yr) * .7 * (1 - sm(.04, .14, z)));     // dark skull cap
+      c = mix(c, DOGC.tan, sm(-.1, -.7, yr) * .3 * sm(.1, -.04, z));                         // tan cheeks
+      c = mix(c, DOGC.white, sm(.042, .014, side) * sm(-.03, .04, z) * sm(.1, .55, yr));      // blaze between the eyes
+      c = mix(c, DOGC.white, sm(.05, .018, side) * sm(.07, .125, z) * sm(-.3, .35, yr));       // blaze down the muzzle
+      c = mix(c, DOGC.white, sm(-.55, -.9, yr) * sm(-.06, .06, z) * (1 - sm(.14, .22, z)));    // white chin and throat
+      c = mix(c, DOGC.nose, sm(.205, .232, z) * sm(-.9, -.3, yr) + sm(.222, .238, z));         // nose leather
+      return c;
+    };
+    const head = new THREE.Group(); head.position.set(0, .652, .442); body.add(head);
+    mesh(sweepHull([
+      { c: [0, -.014, -.095], rx: .072, ryT: .065, ryB: .065 },
+      { c: [0, .0, -.045], rx: .098, ryT: .095, ryB: .086 },
+      { c: [0, .008, .015], rx: .104, ryT: .096, ryB: .098, box: .3 },    // skull
+      { c: [0, -.004, .06], rx: .09, ryT: .066, ryB: .085, box: .3 },     // brow into the stop
+      { c: [0, -.02, .1], rx: .062, ryT: .052, ryB: .066 },
+      { c: [0, -.03, .155], rx: .057, ryT: .047, ryB: .061, box: .25 },   // a blunt muzzle, not a snout
+      { c: [0, -.036, .2], rx: .052, ryT: .043, ryB: .055, box: .3 },
+      { c: [0, -.038, .228], rx: .044, ryT: .038, ryB: .045 },
+      { c: [0, -.04, .244], rx: .026, ryT: .024, ryB: .026 },
+    ], headPaint, SEG), head);
+    // the lower jaw and cheeks, blended into the skull
+    mesh(sweepHull([
+      { c: [0, -.055, -.02], rx: .088, ryT: .052, ryB: .044 },
+      { c: [0, -.058, .035], rx: .077, ryT: .046, ryB: .04 },
+      { c: [0, -.056, .085], rx: .056, ryT: .036, ryB: .032 },
+      { c: [0, -.055, .14], rx: .046, ryT: .028, ryB: .026 },
+      { c: [0, -.055, .2], rx: .038, ryT: .021, ryB: .021 },
+    ], headPaint, SEG), head);
     for (const sx of [-1, 1]) {
-      add(head, sphG(.026, 8, 6), eye, sx * .062, .035, .12);
-      if (fine) add(head, sphG(.034, 8, 6), fur, sx * .062, .052, .115).scale.set(1, .5, .6);   // brow
-      // collie ears: up at the base, the tip folded forward
-      const ear = new THREE.Group(); ear.position.set(sx * .085, .1, -.01); ear.rotation.set(-.12, 0, sx * .3); head.add(ear);
-      add(ear, cylG(.012, .052, .11, 6), fur, 0, .05, 0);
-      add(ear, cylG(.01, .04, .07, 6), furD, 0, .12, .025, -.85);         // folded tip
-      if (fine) add(ear, cylG(.008, .035, .08, 6), white, 0, .045, .015).scale.set(.7, .9, .55);
+      const e = new THREE.Mesh(new THREE.SphereGeometry(.018, 10, 8), eyeMat);
+      e.position.set(sx * .06, .016, .066); e.scale.set(1, .9, .75); head.add(e);
+      if (!COARSE) { const s = new THREE.Mesh(new THREE.SphereGeometry(.005, 6, 5), shineMat); s.position.set(sx * .066, .025, .078); head.add(s); }
+      if (!COARSE) {   // the nostril, a small dark crease
+        const n = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), eyeMat);
+        n.position.set(sx * .014, -.038, .238); n.scale.set(1, .7, .6); head.add(n);
+      }
+      // ear: a flat blade standing at the base, with the top third folded forward
+      const ear = new THREE.Group(); ear.position.set(sx * .062, .064, -.004); ear.rotation.set(.06, sx * .3, sx * .1); head.add(ear);
+      const earPaint = (v, h) => mix(mix(DOGC.coat, DOGC.dark, .5), DOGC.white, sm(.1, .9, -h) * .4);
+      mesh(sweepHull([
+        { c: [0, -.01, 0], rx: .05, ryT: .02, ryB: .02 },
+        { c: [0, .04, 0], rx: .047, ryT: .018, ryB: .018 },
+        { c: [0, .085, 0], rx: .038, ryT: .015, ryB: .015 },
+      ], earPaint, LSEG), ear);
+      const tip = new THREE.Group(); tip.position.set(0, .085, 0); tip.rotation.x = -.85; ear.add(tip);
+      mesh(sweepHull([
+        { c: [0, 0, 0], rx: .038, ryT: .015, ryB: .015 },
+        { c: [0, .032, 0], rx: .026, ryT: .011, ryB: .011 },
+        { c: [0, .055, 0], rx: .012, ryT: .007, ryB: .007 },
+      ], earPaint, LSEG), tip);
     }
-    add(body, cylG(.115, .13, .065, 10), collar, 0, .645, .315, .5);
-    add(body, boxG(.04, .045, .015), tagM, 0, .575, .375, .4);
-    // legs: white socks on all four, feathering at the back
+
+    // the ruff: the collar of long coat a collie carries round its neck and chest
+    mesh(sweepHull([
+      { c: [0, .49, .255], rx: .151, ryT: .118, ryB: .2 },
+      { c: [0, .505, .3], rx: .165, ryT: .13, ryB: .19, fuzz: .1 },
+      { c: [0, .525, .345], rx: .162, ryT: .128, ryB: .165, fuzz: .16 },
+      { c: [0, .55, .382], rx: .143, ryT: .115, ryB: .14, fuzz: .18 },
+      { c: [0, .578, .408], rx: .112, ryT: .095, ryB: .11, fuzz: .12 },
+      { c: [0, .6, .422], rx: .088, ryT: .076, ryB: .086 },
+    ], (v, h, w, t, sec) => {
+      const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
+      return mix(mix(DOGC.coat, DOGC.dark, sm(.45, .95, yr) * .8), DOGC.white, sm(.45, -.1, yr));
+    }, SEG, false, false), body).material = furTwoSided;
+
+    // ---------- legs: shoulder to elbow, then elbow through pastern to paw ----------
+    const coatPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.tan, sm(.3, 1, t) * .35);
+    const pawPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.white, sm(.42, .72, t));
     const legs = [];
     for (const sx of [-1, 1]) for (const sz of [1, -1]) {
-      const hip = new THREE.Group(); hip.position.set(sx * .115, .46, sz * .21); g.add(hip);
-      add(hip, cylG(.045, .034, .2, 7), sz > 0 ? fur : furD, 0, -.1, 0);  // upper leg, coat coloured
-      add(hip, cylG(.034, .03, .13, 7), white, 0, -.25, 0);               // white sock
-      add(hip, boxG(.08, .05, .12), white, 0, -.31, .03);                 // paw
-      if (fine && sz < 0) add(hip, boxG(.075, .13, .06), fur, 0, -.12, -.05, .25);   // feathering on the back legs
-      legs.push({ hip, phase: (sx > 0 ? 0 : Math.PI) + (sz > 0 ? 0 : Math.PI) });
+      const front = sz > 0;
+      const hip = new THREE.Group(); hip.position.set(sx * (front ? .092 : .1), front ? .4 : .41, front ? .22 : -.2); g.add(hip);
+      mesh(sweepHull(front ? [
+        { c: [0, .055, .012], rx: .08, ryT: .09, ryB: .09 },       // shoulder, buried in the body
+        { c: [0, -.01, .006], rx: .058, ryT: .066, ryB: .066 },
+        { c: [0, -.07, 0], rx: .042, ryT: .048, ryB: .048 },
+        { c: [0, -.115, -.004], rx: .034, ryT: .038, ryB: .038 },  // elbow
+      ] : [
+        { c: [0, .06, -.02], rx: .104, ryT: .112, ryB: .116 },       // thigh
+        { c: [0, -.01, -.004], rx: .096, ryT: .105, ryB: .118, fuzz: .05 },   // trousers of long coat
+        { c: [0, -.07, .014], rx: .068, ryT: .08, ryB: .092, fuzz: .06 },
+        { c: [0, -.125, .022], rx: .04, ryT: .047, ryB: .047 },      // stifle
+      ], coatPaint, LSEG), hip);
+      const knee = new THREE.Group(); knee.position.y = front ? -.115 : -.125; hip.add(knee);
+      mesh(sweepHull(front ? [
+        { c: [0, .01, -.004], rx: .04, ryT: .044, ryB: .044 },
+        { c: [0, -.09, -.004], rx: .034, ryT: .037, ryB: .037 },
+        { c: [0, -.185, .004], rx: .031, ryT: .032, ryB: .032 },    // pastern
+        { c: [0, -.222, .016], rx: .032, ryT: .029, ryB: .027 },
+        { c: [0, -.248, .036], rx: .034, ryT: .024, ryB: .022 },     // paw
+        { c: [0, -.262, .062], rx: .033, ryT: .018, ryB: .016 },
+        { c: [0, -.268, .085], rx: .026, ryT: .013, ryB: .012 },
+        { c: [0, -.27, .098], rx: .013, ryT: .008, ryB: .008 },
+      ] : [
+        { c: [0, .012, .022], rx: .042, ryT: .05, ryB: .05 },
+        { c: [0, -.07, -.012], rx: .036, ryT: .044, ryB: .044 },               // the lower leg sweeping back
+        { c: [0, -.15, -.05], rx: .029, ryT: .034, ryB: .034 },      // hock
+        { c: [0, -.222, -.03], rx: .028, ryT: .031, ryB: .031 },
+        { c: [0, -.252, -.004], rx: .031, ryT: .027, ryB: .024 },
+        { c: [0, -.272, .026], rx: .034, ryT: .022, ryB: .02 },      // paw
+        { c: [0, -.282, .054], rx: .032, ryT: .017, ryB: .016 },
+        { c: [0, -.286, .076], rx: .024, ryT: .012, ryB: .012 },
+        { c: [0, -.288, .089], rx: .012, ryT: .008, ryB: .008 },
+      ], pawPaint, LSEG), knee);
+      legs.push({ hip, knee, back: !front, phase: (sx > 0 ? 0 : Math.PI) + (front ? 0 : Math.PI) });
     }
-    // a collie's plumed tail, carried low with a white tip
-    const tail = new THREE.Group(); tail.position.set(0, .58, -.32); g.add(tail);
-    add(tail, cylG(.04, .055, .28, 7), fur, 0, -.04, -.12, -2.05);
-    if (fine) add(tail, cylG(.075, .085, .24, 7), fur, 0, -.05, -.13, -2.05).scale.set(1, 1, .55);   // the plume
-    add(tail, cylG(.028, .042, .13, 7), white, 0, -.15, -.21, -2.2);      // white tip
-    g.scale.setScalar(1.05);
+
+    // ---------- tail: thick at the root, plumed through the middle, white at the tip ----------
+    const tail = new THREE.Group(); tail.position.set(0, .458, -.375); g.add(tail);
+    mesh(sweepHull([
+      { c: [0, .015, .025], rx: .055, ryT: .052, ryB: .052 },
+      { c: [0, -.025, -.06], rx: .072, ryT: .072, ryB: .072, fuzz: .1 },
+      { c: [0, -.075, -.145], rx: .07, ryT: .072, ryB: .07, fuzz: .14 },
+      { c: [0, -.135, -.22], rx: .058, ryT: .062, ryB: .058, fuzz: .14 },
+      { c: [0, -.2, -.278], rx: .042, ryT: .046, ryB: .042, fuzz: .12 },
+      { c: [0, -.258, -.316], rx: .027, ryT: .03, ryB: .027, fuzz: .08 },
+      { c: [0, -.3, -.334], rx: .012, ryT: .013, ryB: .012 },
+    ], (v, h, w, t) => mix(mix(DOGC.coat, DOGC.dark, sm(.1, .7, h) * .45), DOGC.white, sm(.66, .9, t)), LSEG), tail);
+
+    g.scale.setScalar(1.04);
     return { g, body, head, tail, legs };
   }
   function removeDog() { if (dog) scene.remove(dog.m.g); dog = null; }
@@ -7099,7 +7265,7 @@
     dog.sit += (wantSit - dog.sit) * Math.min(1, dt * 5);
     g.position.y = p.y - dog.sit * .06;
     dog.m.body.rotation.x += dog.sit * .32;
-    dog.m.legs.forEach(L => { if (L.phase > 1) L.hip.rotation.x += dog.sit * .9; });
+    dog.m.legs.forEach(L => { if (L.back) { L.hip.rotation.x += dog.sit * 1.15; L.knee.rotation.x = -dog.sit * .55; } });
     // tail: wags fast near you, slower on the run; head tracks the nearest soldier
     const near = Math.hypot(player.pos.x - p.x, player.pos.z - p.z) < 4;
     dog.m.tail.rotation.z = Math.sin(dog.gait * (near ? 9 : 5)) * (near ? .7 : .4);
