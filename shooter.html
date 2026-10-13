@@ -428,7 +428,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-14.0120</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-14.0210</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -2991,13 +2991,77 @@
       N({ type: "bandpass", f: 900, f2: 380, q: .9, dur: .22, vol: .2 * s.v, pan: s.pan, atk: .01 });
       N({ type: "highpass", f: 2600, dur: .09, vol: .1 * s.v, pan: s.pan });
     },
+    // A bark is a short burst of voice pushed through the dog's throat and mouth: a hard
+    // transient, a pitch that snaps up then falls away, strong harmonics shaped by three
+    // vocal tract resonances, and a breathy edge. Built here rather than sampled.
+    barkOne(out, t, f0, level, bite) {
+      const voice = actx.createGain();                       // the vocal folds
+      const saw = actx.createOscillator(), sub = actx.createOscillator();
+      saw.type = "sawtooth"; sub.type = "square";
+      // the pitch snaps up on the attack and falls through the bark, which is what makes it a bark
+      saw.frequency.setValueAtTime(f0 * 1.45, t);
+      saw.frequency.exponentialRampToValueAtTime(f0, t + .035);
+      saw.frequency.exponentialRampToValueAtTime(f0 * .62, t + .2);
+      // vocal folds are never perfectly regular: a little jitter is most of what separates
+      // a bark from a synthesiser
+      const jit = actx.createOscillator(), jitG = actx.createGain();
+      jit.type = "triangle"; jit.frequency.value = 42 + Math.random() * 30;
+      jitG.gain.setValueAtTime(f0 * .05, t); jitG.gain.exponentialRampToValueAtTime(f0 * .012, t + .2);
+      jit.connect(jitG); jitG.connect(saw.frequency);
+      jit.start(t); jit.stop(t + .3);
+      sub.frequency.setValueAtTime(f0 * .5, t);
+      sub.frequency.exponentialRampToValueAtTime(f0 * .32, t + .2);
+      const subG = actx.createGain(); subG.gain.value = .35;
+      saw.connect(voice); sub.connect(subG); subG.connect(voice);
+      voice.gain.setValueAtTime(.0001, t);
+      voice.gain.linearRampToValueAtTime(1, t + .007);        // hard attack
+      voice.gain.setValueAtTime(1, t + .03);
+      voice.gain.exponentialRampToValueAtTime(.22, t + .11);
+      voice.gain.exponentialRampToValueAtTime(.0001, t + .24);
+      // three resonances: chest, mouth, and the bright edge that carries across a field
+      const sum = actx.createGain(); sum.gain.value = level;
+      [[560 * bite, 7, 1], [1250 * bite, 9, .55], [2700 * bite, 6, .3]].forEach(([f, q, g]) => {
+        const bp = actx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = f; bp.Q.value = q;
+        const gg = actx.createGain(); gg.gain.value = g;
+        voice.connect(bp); bp.connect(gg); gg.connect(sum);
+      });
+      const thru = actx.createGain(); thru.gain.value = .3; voice.connect(thru); thru.connect(sum);
+      // the breathy transient at the very front of the bark
+      const ns = actx.createBufferSource(); ns.buffer = noiseBuf; ns.loop = true;
+      const nf = actx.createBiquadFilter(); nf.type = "bandpass"; nf.frequency.setValueAtTime(2200 * bite, t);
+      nf.frequency.exponentialRampToValueAtTime(900, t + .09); nf.Q.value = 1.1;
+      const ng = actx.createGain();
+      ng.gain.setValueAtTime(.0001, t);
+      ng.gain.linearRampToValueAtTime(.5 * level, t + .004);
+      ng.gain.exponentialRampToValueAtTime(.0001, t + .075);
+      ns.connect(nf); nf.connect(ng); ng.connect(out);
+      sum.connect(out);
+      // the mouth closing at the end of the bark: a short, soft, low thump
+      const cl = actx.createBufferSource(); cl.buffer = noiseBuf; cl.loop = true;
+      const cf = actx.createBiquadFilter(); cf.type = "lowpass"; cf.frequency.value = 520;
+      const cg = actx.createGain();
+      cg.gain.setValueAtTime(.0001, t + .17);
+      cg.gain.linearRampToValueAtTime(.16 * level, t + .185);
+      cg.gain.exponentialRampToValueAtTime(.0001, t + .27);
+      cl.connect(cf); cf.connect(cg); cg.connect(out);
+      cl.start(t + .17, Math.random()); cl.stop(t + .3);
+      saw.start(t); sub.start(t); ns.start(t, Math.random() * 1.4);
+      saw.stop(t + .3); sub.stop(t + .3); ns.stop(t + .12);
+    },
     bark(pos, urgent) {
-      const s = spatial(pos), n = urgent ? 2 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 2);
+      if (!actx) return;
+      const s = spatial(pos), t0 = actx.currentTime;
+      const out = actx.createGain(); out.gain.value = .9 * s.v;
+      const lp = actx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5200;
+      out.connect(lp); lp.connect(outNode(s.pan));
+      // a bark comes in a short series, each one a little lower and quieter than the last
+      const n = urgent ? 2 + Math.floor(Math.random() * 3) : 1 + Math.floor(Math.random() * 2);
+      const base = (urgent ? 560 : 430) + Math.random() * 110;
+      let t = t0;
       for (let i = 0; i < n; i++) {
-        const f = (urgent ? 420 : 330) + Math.random() * 120, d = i * (urgent ? .16 : .22);
-        T({ type: "sawtooth", f, f2: f * .45, dur: .12, vol: .16 * s.v, pan: s.pan, delay: d, atk: .006 });
-        T({ type: "square", f: f * .5, f2: f * .3, dur: .1, vol: .1 * s.v, pan: s.pan, delay: d });
-        N({ type: "bandpass", f: 1500, f2: 700, q: 1.2, dur: .09, vol: .12 * s.v, pan: s.pan, delay: d });
+        const f = base * (1 - i * .06) * (.95 + Math.random() * .1);
+        sfx.barkOne(out, t, f, (urgent ? .3 : .24) * Math.pow(.86, i), .96 + Math.random() * .1);
+        t += (urgent ? .19 : .26) + Math.random() * .07;
       }
     }
   };
