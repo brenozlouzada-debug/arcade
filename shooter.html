@@ -428,7 +428,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-14.0320</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-14.0415</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -7221,6 +7221,8 @@
     const furTwoSided = fur;
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0x120c07, roughness: .15, metalness: .2 });
     const shineMat = new THREE.MeshBasicMaterial({ color: 0xf6f2ea });
+    const irisMat = new THREE.MeshStandardMaterial({ color: 0x4a2a10, roughness: .3, metalness: 0 });
+    const lidMat = new THREE.MeshStandardMaterial({ color: 0x120b05, roughness: .9, metalness: 0 });
     const SEG = COARSE ? 12 : 22, LSEG = COARSE ? 8 : 14;
     const mesh = (geo, parent) => { const m = new THREE.Mesh(geo, fur); m.castShadow = !COARSE; (parent || g).add(m); return m; };
     const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), Math.max(0, Math.min(1, t)));
@@ -7289,12 +7291,25 @@
       { c: [0, -.055, .2], rx: .038, ryT: .021, ryB: .021 },
     ], headPaint, SEG), head);
     for (const sx of [-1, 1]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(.018, 10, 8), eyeMat);
-      e.position.set(sx * .06, .016, .066); e.scale.set(1, .9, .75); head.add(e);
-      if (!COARSE) { const s = new THREE.Mesh(new THREE.SphereGeometry(.005, 6, 5), shineMat); s.position.set(sx * .066, .025, .078); head.add(s); }
-      if (!COARSE) {   // the nostril, a small dark crease
-        const n = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), eyeMat);
-        n.position.set(sx * .014, -.038, .238); n.scale.set(1, .7, .6); head.add(n);
+      // the eye: an almond lid rim with the ball set into it, aimed out and forward
+      const eye = new THREE.Group();
+      eye.position.set(sx * .0695, .0215, .0545);
+      eye.rotation.set(-.1, sx * .62, sx * .2);
+      eye.translateZ(.0122);                       // out to where the skull surface is, so the ball shows
+      head.add(eye);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(.0155, COARSE ? 11 : 14, COARSE ? 8 : 11), irisMat);
+      eye.add(ball);
+      const lid = new THREE.Mesh(new THREE.TorusGeometry(.0118, .0038, COARSE ? 6 : 8, COARSE ? 14 : 18), lidMat);
+      lid.position.z = .0105; lid.scale.set(1, .64, .9); lid.rotation.z = -sx * .22; eye.add(lid);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(.006, COARSE ? 8 : 10, COARSE ? 6 : 8), eyeMat);
+      pupil.position.z = .012; pupil.scale.set(1, 1, .6); eye.add(pupil);
+      if (!COARSE) {
+        const s = new THREE.Mesh(new THREE.SphereGeometry(.0028, 6, 5), shineMat);
+        s.position.set(.0045, .0048, .0145); s.scale.set(1, .8, .5); eye.add(s);
+      }
+      if (!COARSE) {   // the nostril, a dark crease in the nose leather
+        const n = new THREE.Mesh(new THREE.SphereGeometry(.0062, 6, 5), eyeMat);
+        n.position.set(sx * .0335, -.0345, .2325); n.scale.set(.8, .7, .9); head.add(n);
       }
       // ear: a flat blade standing at the base, with the top third folded forward
       const ear = new THREE.Group(); ear.position.set(sx * .062, .064, -.004); ear.rotation.set(.06, sx * .3, sx * .1); head.add(ear);
