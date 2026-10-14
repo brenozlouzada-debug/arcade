@@ -81,8 +81,6 @@
   .oanyone #o-quick { font-size: 17px; }
   #vig { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(150, 0, 0, .9) 100%); }
   /* a lens always darkens its corners a little; the grain keeps flat sky from banding */
-  #film { position: fixed; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse 72% 70% at center, rgba(0,0,0,0) 52%, rgba(0,0,0,.30) 100%); }
-  #grain { position: fixed; inset: -50%; pointer-events: none; z-index: 1; opacity: .07; mix-blend-mode: overlay; background-repeat: repeat; animation: gr .9s steps(1) infinite; }
   @keyframes gr { 0%{transform:translate(0,0)} 25%{transform:translate(-2%,1%)} 50%{transform:translate(1%,-2%)} 75%{transform:translate(2%,2%)} }
   #dmgdir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
   #dmgdir i { position: absolute; width: 150px; height: 44px; left: -75px; top: -215px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 50, 40, .9), rgba(255, 50, 40, 0)); animation: dd .9s forwards; }
@@ -304,8 +302,8 @@
   <div id="dmgnums"></div>
   <div id="vig"></div>
   <div id="dmgdir"></div>
-  <div id="film"></div>
-  <div id="grain"></div>
+  
+  
   <div id="flash"></div>
 </div>
 <div id="touch">
@@ -428,7 +426,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-14.0415</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-15.0210</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -448,14 +446,41 @@
   const COARSE = matchMedia("(pointer: coarse)").matches;
   const FOG_COL = 0xcfe0ee;
   scene.background = new THREE.Color(FOG_COL);
-  scene.fog = new THREE.Fog(FOG_COL, 40, 300);
+  scene.fog = new THREE.Fog(FOG_COL, 76, 570);
+
+  // ---------- colour management ----------
+  // Every colour in this file is written the way you would pick it in a paint
+  // program: an sRGB hex. Light does not add or multiply correctly in that space,
+  // so the renderer has to work in linear light and convert back at the very end.
+  // three.js only started doing this for you in a much later version, so we do it
+  // here: colours convert on the way in, convert back on the way out, and the
+  // canvas textures are told they hold sRGB pixels. Without it the whole scene is
+  // lit in the wrong space, which is what makes a renderer look flat and chalky.
+  (function () {
+    const P = THREE.Color.prototype;
+    const _hex = P.setHex, _style = P.setStyle, _hsl = P.setHSL;
+    const _getHex = P.getHex, _getHexStr = P.getHexString, _getStyle = P.getStyle, _getHSL = P.getHSL;
+    let raw = false;                                     // set while an outer setter is running
+    const srgb = c => c.clone().convertLinearToSRGB();
+    P.setHex = function (h) { _hex.call(this, h); return raw ? this : this.convertSRGBToLinear(); };
+    P.setStyle = function (v) { raw = true; try { _style.call(this, v); } finally { raw = false; } return this.convertSRGBToLinear(); };
+    P.setHSL = function (h, s, l) { raw = true; try { _hsl.call(this, h, s, l); } finally { raw = false; } return this.convertSRGBToLinear(); };
+    P.getHex = function () { return _getHex.call(srgb(this)); };
+    P.getHexString = function () { return _getHexStr.call(srgb(this)); };
+    P.getStyle = function () { return _getStyle.call(srgb(this)); };
+    P.getHSL = function (t) { return _getHSL.call(srgb(this), t); };
+    P.offsetHSL = function (dh, ds, dl) { const t = {}; this.getHSL(t); return this.setHSL(t.h + dh, t.s + ds, t.l + dl); };
+  })();
 
   const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 700);
   camera.rotation.order = "YXZ";
   const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // the renderer works in linear light and writes sRGB to the screen, which is the
+  // other half of the colour management above
+  renderer.outputEncoding = THREE.sRGBEncoding;
   // filmic tone mapping: bright sky and muzzle flashes roll off like film instead of clipping to flat white
-  renderer.toneMapping = THREE.CineonToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
   if (COARSE) renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
@@ -518,8 +543,91 @@
     const c = document.createElement("canvas"); c.width = w; c.height = h;
     draw(c.getContext("2d"), w, h);
     const t = new THREE.CanvasTexture(c);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.anisotropy = 4;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.anisotropy = 8;
+    t.encoding = THREE.sRGBEncoding;                      // canvas pixels are sRGB, not linear
     return t;
+  }
+  // A normal map is what makes a flat polygon catch light like a rough surface.
+  // These are derived from a height sketch drawn on a canvas: the slope at each
+  // texel becomes the direction the surface faces there. three.js works out the
+  // tangent frame from screen derivatives, so any mesh with UVs can use one.
+  function normalTex(size, drawHeight, strength, rx, ry) {
+    const c = document.createElement("canvas"); c.width = c.height = size;
+    const g = c.getContext("2d");
+    g.fillStyle = "#808080"; g.fillRect(0, 0, size, size);
+    drawHeight(g, size, size);
+    const src = g.getImageData(0, 0, size, size).data;
+    const out = g.createImageData(size, size);
+    const H = (x, y) => src[(((y + size) % size) * size + ((x + size) % size)) * 4] / 255;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const dx = (H(x + 1, y) - H(x - 1, y)) * strength;
+      const dy = (H(x, y + 1) - H(x, y - 1)) * strength;
+      const l = Math.hypot(-dx, -dy, 1), i = (y * size + x) * 4;
+      out.data[i] = (-dx / l * .5 + .5) * 255;
+      out.data[i + 1] = (-dy / l * .5 + .5) * 255;
+      out.data[i + 2] = (1 / l * .5 + .5) * 255;
+      out.data[i + 3] = 255;
+    }
+    g.putImageData(out, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.anisotropy = 8;
+    t.encoding = THREE.LinearEncoding;                 // this is data, not colour
+    return t;
+  }
+  const NRM = {};
+  function normalMaps() {
+    if (NRM.ready) return NRM;
+    NRM.ready = true;
+    const blobs = (g, w, h, n, r0, r1, a) => {
+      for (let i = 0; i < n; i++) {
+        const x = rnd(0, w), y = rnd(0, h), r = rnd(r0, r1);
+        const gr = g.createRadialGradient(x, y, 0, x, y, r);
+        const v = R() > .5 ? 255 : 0;
+        gr.addColorStop(0, "rgba(" + v + "," + v + "," + v + "," + a + ")");
+        gr.addColorStop(1, "rgba(" + v + "," + v + "," + v + ",0)");
+        g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+    };
+    NRM.ground = normalTex(256, (g, w, h) => {
+      blobs(g, w, h, 70, 6, 26, .5);
+      for (let i = 0; i < 2600; i++) {
+        g.strokeStyle = R() > .5 ? "rgba(255,255,255,.5)" : "rgba(0,0,0,.5)";
+        g.lineWidth = rnd(.7, 1.6);
+        const x = rnd(0, w), y = rnd(0, h);
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd(-3, 3), y - rnd(3, 9)); g.stroke();
+      }
+    }, 2.4, 280, 280);
+    NRM.concrete = normalTex(256, (g, w, h) => {
+      blobs(g, w, h, 150, 3, 16, .55);
+      for (let i = 0; i < 1400; i++) { const v = R() > .5 ? 255 : 0; g.fillStyle = "rgba(" + v + "," + v + "," + v + ",.5)"; g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 2.6), rnd(1, 2.6)); }
+      g.strokeStyle = "rgba(0,0,0,.85)"; g.lineWidth = 2.2;
+      for (let i = 0; i < 6; i++) { let x = rnd(0, w), y = rnd(0, h); g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 8; k++) { x += rnd(-20, 20); y += rnd(-20, 20); g.lineTo(x, y); } g.stroke(); }
+    }, 2, 3, 3);
+    NRM.wood = normalTex(256, (g, w, h) => {
+      for (let i = 0; i < 230; i++) {
+        g.strokeStyle = R() > .5 ? "rgba(255,255,255,.45)" : "rgba(0,0,0,.45)";
+        g.lineWidth = rnd(.8, 3.2);
+        const y = rnd(0, h);
+        g.beginPath(); g.moveTo(0, y);
+        g.bezierCurveTo(w * .3, y + rnd(-5, 5), w * .7, y + rnd(-5, 5), w, y + rnd(-3, 3));
+        g.stroke();
+      }
+      g.strokeStyle = "rgba(0,0,0,.9)"; g.lineWidth = 3;
+      for (let i = 0; i < 5; i++) { const x = rnd(0, w); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+    }, 1.7, 2, 2);
+    NRM.metal = normalTex(256, (g, w, h) => {
+      blobs(g, w, h, 90, 4, 20, .35);
+      for (let i = 0; i < 700; i++) { const v = R() > .5 ? 255 : 0; g.fillStyle = "rgba(" + v + "," + v + "," + v + ",.4)"; g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 4), rnd(1, 2)); }
+    }, 1.4, 2, 2);
+    NRM.cloth = normalTex(128, (g, w, h) => {
+      for (let i = 0; i < 2200; i++) {
+        const v = R() > .5 ? 255 : 0;
+        g.fillStyle = "rgba(" + v + "," + v + "," + v + ",.45)";
+        g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 3), rnd(1, 2));
+      }
+      for (let i = 0; i < 40; i++) { g.strokeStyle = "rgba(0,0,0,.5)"; g.lineWidth = 1; const y = rnd(0, h); g.beginPath(); g.moveTo(0, y); g.lineTo(w, y + rnd(-2, 2)); g.stroke(); }
+    }, 1.1, 5, 5);
+    return NRM;
   }
   function shade(hexStr, k) {
     const c = new THREE.Color(hexStr); c.multiplyScalar(k);
@@ -556,17 +664,17 @@
   }
   const TEX = {
     ground: canvasTex(512, 512, (g, w, h) => {
-      g.fillStyle = "#58853f"; g.fillRect(0, 0, w, h);
+      g.fillStyle = "#3f6630"; g.fillRect(0, 0, w, h);
       for (let i = 0; i < 90; i++) {
         const x = rnd(0, w), y = rnd(0, h), r = rnd(20, 60);
         const gr = g.createRadialGradient(x, y, 0, x, y, r);
-        const c = pick(["80,125,60", "60,100,45", "100,140,70", "110,95,60"]);
+        const c = pick(["64,98,48", "46,78,36", "80,112,56", "86,74,46"]);
         gr.addColorStop(0, `rgba(${c},.35)`); gr.addColorStop(1, `rgba(${c},0)`);
         g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
       }
       for (let i = 0; i < 9000; i++) {
         const x = rnd(0, w), y = rnd(0, h), l = rnd(3, 9);
-        g.strokeStyle = pick(["#6f9c4a", "#4a7636", "#7fae55", "#3f6a30", "#8bb35e", "#5c8a3e"]);
+        g.strokeStyle = pick(["#5b7f3c", "#3b5f2b", "#688c46", "#324f26", "#719247", "#4a6f33"]);
         g.lineWidth = rnd(.6, 1.4);
         g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd(-2, 2), y - l); g.stroke();
       }
@@ -775,28 +883,64 @@
   try { const sm = localStorage.getItem("shooter.map"); if (MAPS[sm]) selectedMap = sm; } catch (_) {}
 
   // ---------- lighting & sky ----------
-  const sunDir = new THREE.Vector3(0.5, 0.72, 0.38).normalize();
-  const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x5b4a33, 0.4); scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff0d6, 0.95);
-  sun.position.copy(sunDir).multiplyScalar(70);
+  const HEMI_K = 1.5, SUN_K = 2.5;       // linear-light scale for the per-map numbers
+  const FOG_K = 1.9;                     // clear air carries much further than the old numbers said
+
+  // a sun partway down the sky: long shadows model shape far better than noon does
+  const sunDir = new THREE.Vector3(0.52, 0.44, 0.36).normalize();
+  const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x5b4a33, 0.4 * HEMI_K); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff0d6, 0.95 * SUN_K);
+  sun.position.copy(sunDir).multiplyScalar(130);
   sun.castShadow = true;
   sun.shadow.camera.left = sun.shadow.camera.bottom = -ARENA - 6;
   sun.shadow.camera.right = sun.shadow.camera.top = ARENA + 6;
-  sun.shadow.camera.near = 10; sun.shadow.camera.far = 180;
-  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+  sun.shadow.camera.near = 20; sun.shadow.camera.far = 330;
+  // a low sun makes the depth gradient steep, so the offset has to be generous;
+  // normalBias works in world units along the surface normal, which is what thin
+  // foliage needs to stop shadowing itself into a mess of black specks
+  sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.12;
   sun.shadow.mapSize.set(...(COARSE ? [1024, 1024] : [2048, 2048]));
   scene.add(sun);
 
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), new THREE.ShaderMaterial({
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 48, 32), new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { top: { value: new THREE.Color(0x2c6bbd) }, mid: { value: new THREE.Color(0x78b0e4) }, hor: { value: new THREE.Color(FOG_COL) }, sunDir: { value: sunDir }, sunCol: { value: new THREE.Vector3(1, .86, .6) }, glow: { value: 1 }, starK: { value: 0 } },
-    vertexShader: "varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
-    fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 hor; uniform vec3 sunDir; uniform vec3 sunCol; uniform float glow; uniform float starK; varying vec3 vP;
-      void main(){ float h = clamp(vP.y, 0., 1.);
-        vec3 c = mix(hor, mid, smoothstep(0.0, 0.3, h)); c = mix(c, top, smoothstep(0.25, 0.95, h));
-        float s = max(dot(normalize(vP), sunDir), 0.);
-        c += sunCol * glow * (pow(s, 900.) * 4. + pow(s, 24.) * 0.3 + pow(s, 4.) * 0.06);
-        vec3 q = floor(normalize(vP) * 240.); c += vec3(step(.9972, fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453))) * smoothstep(.08, .4, h) * starK;
+    uniforms: {
+      top: { value: new THREE.Color(0x2c6bbd) }, mid: { value: new THREE.Color(0x78b0e4) }, hor: { value: new THREE.Color(FOG_COL) },
+      sunDir: { value: sunDir }, sunCol: { value: new THREE.Vector3(1, .86, .6) }, glow: { value: 1 }, starK: { value: 0 }, haze: { value: 1 }
+    },
+    vertexShader: "varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
+    // The sky is where a renderer gives itself away, so this is shaped the way air
+    // actually behaves rather than as a three-stop gradient: the band near the
+    // horizon is bright because you are looking through far more air, the sun
+    // smears a halo forward into that band, and the disc has a soft edge.
+    fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 hor; uniform vec3 sunDir; uniform vec3 sunCol;
+      uniform float glow; uniform float starK; uniform float haze; varying vec3 vP;
+      float h31(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+      void main(){
+        vec3 d = normalize(vP);
+        float h = d.y;
+        // how much air you look through, normalised so straight up is 1
+        float air = 1.0 / max(h * 0.92 + 0.08, 0.055);
+        float t = pow(clamp(h, 0.0, 1.0), 0.42);
+        vec3 c = mix(hor, mid, smoothstep(0.0, 0.34, t));
+        c = mix(c, top, smoothstep(0.28, 1.0, t));
+        // the haze band: thickest at the horizon, fading out by about 25 degrees up
+        c = mix(c, hor, clamp((air - 1.0) * 0.17, 0.0, 0.82) * haze);
+        float cosA = dot(d, sunDir);
+        float s = max(cosA, 0.0);
+        // forward scattering: a wide warm wash around the sun, strongest low down
+        float mie = pow(s, 2.5) * 0.10 + pow(s, 9.0) * 0.22 + pow(s, 48.0) * 0.5;
+        c += sunCol * mie * glow * mix(0.55, 1.0, clamp(air * 0.25, 0.0, 1.0));
+        // the disc itself, with a soft limb instead of a hard circle
+        c += sunCol * glow * 3.4 * smoothstep(0.99955, 0.99992, cosA);
+        // below the horizon the ground bounces a little light back up
+        c = mix(c, hor * 0.72, smoothstep(0.0, -0.22, h));
+        // stars, only where the sky is dark enough to show them
+        vec3 q = floor(d * 260.0);
+        float st = step(0.9974, h31(q)) * smoothstep(0.02, 0.35, h);
+        c += vec3(0.86, 0.9, 1.0) * st * starK * (0.5 + 0.5 * h31(q + 3.1));
+        // a touch of noise: flat sky bands badly in 8 bits
+        c += (h31(d * 912.3) - 0.5) * 0.0045;
         gl_FragColor = vec4(c, 1.0); }`
   }));
   sky.renderOrder = -10;
@@ -810,6 +954,136 @@
     scene.environment = pm.fromScene(envScene, 0.02).texture;
     pm.dispose();
   } catch (err) { /* devices without float render targets just skip reflections */ }
+
+  // ---------- post-processing ----------
+  // three.js ships its composer in the examples, which this file does not bundle,
+  // so this is a small one written for exactly what the game needs. The scene is
+  // rendered into a floating point buffer with the tone mapping switched off, so
+  // highlights keep their real brightness; the bright parts are blurred into a
+  // bloom; and one final pass does the film look — exposure, the ACES curve, a
+  // grade, a vignette, grain and the sRGB conversion — in a single shader instead
+  // of as CSS layers over the top.
+  // Phones keep the direct path: the canvas gives them free multisampling there,
+  // and a float buffer plus extra full-screen passes is not a trade a phone wins.
+  const POST = COARSE ? null : (() => {
+    const gl2 = renderer.capabilities.isWebGL2;
+    const halfFloat = renderer.extensions.has("OES_texture_half_float") || gl2;
+    if (!halfFloat) return null;
+    const type = THREE.HalfFloatType;
+    const mk = (w, h, ms) => {
+      const o = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, encoding: THREE.LinearEncoding, depthBuffer: true, stencilBuffer: false };
+      const t = ms && gl2 ? new THREE.WebGLMultisampleRenderTarget(w, h, o) : new THREE.WebGLRenderTarget(w, h, o);
+      if (t.samples !== undefined && ms && gl2) t.samples = 4;
+      return t;
+    };
+    const scn = mk(1, 1, true);
+    const bloomA = mk(1, 1), bloomB = mk(1, 1);
+    bloomA.depthBuffer = bloomB.depthBuffer = false;
+    const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const quadGeo = new THREE.PlaneGeometry(2, 2);
+    const quadScene = new THREE.Scene();
+    const quad = new THREE.Mesh(quadGeo, null);
+    quad.frustumCulled = false; quadScene.add(quad);
+    const VERT = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
+
+    const bright = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, thresh: { value: 1.45 }, knee: { value: .5 } },
+      vertexShader: VERT,
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float thresh; uniform float knee; varying vec2 vUv;
+        void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb;
+          float l = max(c.r, max(c.g, c.b));
+          float k = clamp((l - thresh + knee) / (2.0 * knee), 0.0, 1.0);
+          float w = max(l - thresh, k * k * knee) / max(l, 1e-4);
+          gl_FragColor = vec4(c * w, 1.0); }`
+    });
+    const blur = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, dir: { value: new THREE.Vector2(1, 0) } },
+      vertexShader: VERT,
+      // a nine tap gaussian folded into five bilinear samples
+      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 dir; varying vec2 vUv;
+        void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb * 0.227;
+          c += (texture2D(tDiffuse, vUv + dir * 1.3846).rgb + texture2D(tDiffuse, vUv - dir * 1.3846).rgb) * 0.316;
+          c += (texture2D(tDiffuse, vUv + dir * 3.2308).rgb + texture2D(tDiffuse, vUv - dir * 3.2308).rgb) * 0.0702;
+          gl_FragColor = vec4(c, 1.0); }`
+    });
+    const final = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null }, tBloom: { value: null }, texel: { value: new THREE.Vector2() },
+        exposure: { value: 1.02 }, bloomK: { value: .3 }, vig: { value: .36 }, grain: { value: .028 },
+        time: { value: 0 }, sat: { value: 1.06 }, contrast: { value: 1.08 }, lift: { value: new THREE.Vector3(.012, .015, .024) },
+        gain: { value: new THREE.Vector3(1, 1, 1) }, ab: { value: .45 }
+      },
+      vertexShader: VERT,
+      fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tBloom; uniform vec2 texel;
+        uniform float exposure; uniform float bloomK; uniform float vig; uniform float grain; uniform float time;
+        uniform float sat; uniform float contrast; uniform vec3 lift; uniform vec3 gain; uniform float ab;
+        varying vec2 vUv;
+        // the ACES curve, in the fitted form everyone uses
+        vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+        float h21(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        void main(){
+          vec2 d = vUv - 0.5;
+          float r2 = dot(d, d);
+          // a real lens does not focus every wavelength on the same spot, and the
+          // error grows toward the edge of the frame
+          vec2 off = d * r2 * ab * 0.02;
+          vec3 c;
+          c.r = texture2D(tDiffuse, vUv + off).r;
+          c.g = texture2D(tDiffuse, vUv).g;
+          c.b = texture2D(tDiffuse, vUv - off).b;
+          c += texture2D(tBloom, vUv).rgb * bloomK;
+          c *= exposure;
+          c = aces(c);
+          // grade: lift the shadows, pull the gain, then widen the colour a touch
+          c = clamp(c * gain + lift, 0.0, 1.0);
+          c = clamp((c - 0.5) * contrast + 0.5, 0.0, 1.0);
+          float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          c = mix(vec3(lum), c, sat);
+          // the corners of a lens are always darker than the middle
+          c *= 1.0 - vig * smoothstep(0.1, 0.72, r2);
+          // grain keeps a flat sky from banding in eight bits
+          c += (h21(vUv * 1024.0 + time) - 0.5) * grain;
+          // linear light to sRGB, the last step before the screen
+          c = mix(c * 12.92, 1.055 * pow(max(c, 0.0001), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+          gl_FragColor = vec4(c, 1.0); }`
+    });
+    const DIV = 4;
+    let W = 1, H = 1;
+    function resize(w, h) {
+      const px = renderer.getPixelRatio();
+      W = Math.max(2, Math.floor(w * px)); H = Math.max(2, Math.floor(h * px));
+      scn.setSize(W, H);
+      bloomA.setSize(Math.max(2, W / DIV | 0), Math.max(2, H / DIV | 0));
+      bloomB.setSize(Math.max(2, W / DIV | 0), Math.max(2, H / DIV | 0));
+      final.uniforms.texel.value.set(1 / W, 1 / H);
+    }
+    const draw = (mat, target) => { quad.material = mat; renderer.setRenderTarget(target); renderer.render(quadScene, quadCam); };
+    let bloomOn = true;
+    function render(dt) {
+      // the scene goes into a linear buffer: no tone map, no sRGB, nothing clipped
+      const keepTM = renderer.toneMapping, keepEnc = renderer.outputEncoding;
+      renderer.toneMapping = THREE.NoToneMapping;
+      renderer.outputEncoding = THREE.LinearEncoding;
+      renderer.setRenderTarget(scn);
+      renderer.clear();
+      renderer.render(scene, camera);
+      renderer.toneMapping = keepTM; renderer.outputEncoding = keepEnc;
+      if (bloomOn) {
+        bright.uniforms.tDiffuse.value = scn.texture; draw(bright, bloomA);
+        blur.uniforms.tDiffuse.value = bloomA.texture; blur.uniforms.dir.value.set(1.6 / bloomA.width, 0); draw(blur, bloomB);
+        blur.uniforms.tDiffuse.value = bloomB.texture; blur.uniforms.dir.value.set(0, 1.6 / bloomA.height); draw(blur, bloomA);
+        blur.uniforms.tDiffuse.value = bloomA.texture; blur.uniforms.dir.value.set(3.4 / bloomA.width, 0); draw(blur, bloomB);
+        blur.uniforms.tDiffuse.value = bloomB.texture; blur.uniforms.dir.value.set(0, 3.4 / bloomA.height); draw(blur, bloomA);
+      }
+      final.uniforms.tDiffuse.value = scn.texture;
+      final.uniforms.tBloom.value = bloomOn ? bloomA.texture : null;
+      final.uniforms.bloomK.value = bloomOn ? .3 : 0;
+      final.uniforms.time.value = (final.uniforms.time.value + dt * 60) % 1000;
+      draw(final, null);
+    }
+    resize(innerWidth, innerHeight);
+    return { resize, render, final, set bloom(v) { bloomOn = !!v; }, get bloom() { return bloomOn; } };
+  })();
 
   const cloudTex = canvasTex(256, 128, (g, w, h) => {
     for (let i = 0; i < 26; i++) {
@@ -860,7 +1134,7 @@
     t.repeat.set(140, 140); return (GT[kind] = t);
   }
   const groundGeo = (() => { const geo = new THREE.PlaneGeometry(700, 700, 140, 140); geo.rotateX(-Math.PI / 2); return geo; })();
-  const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: TEX.ground, vertexColors: true, roughness: 1, metalness: 0 }));
+  const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: TEX.ground, normalMap: normalMaps().ground, normalScale: new THREE.Vector2(.75, .75), vertexColors: true, roughness: .97, metalness: 0 }));
   ground.receiveShadow = true; TEX.ground.repeat.set(140, 140); scene.add(ground);
   function paintGround(M) {
     const geo = groundGeo, pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color();
@@ -882,19 +1156,40 @@
   }
   paintGround(MAPS.meadow);
 
-  // distant mountains
+  // Distant mountains. A smooth cone reads as cut paper on the horizon, so each
+  // one is broken up: the ridges are pushed about with noise, and the rock is
+  // painted into the vertices with snow that follows height and flat ground
+  // rather than being a separate white hat on top.
   const mountainMeshes = [];
+  function mountainGeo(w, h, sides, cap) {
+    const g = new THREE.ConeGeometry(w, h, sides, 5);
+    const P = g.attributes.position, col = new Float32Array(P.count * 3), c = new THREE.Color();
+    const rock = new THREE.Color(0x6e86a0), rockD = new THREE.Color(0x45566b), snow = new THREE.Color(0xeef4fa);
+    for (let i = 0; i < P.count; i++) {
+      const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      const t = (y + h / 2) / h;                       // 0 at the foot, 1 at the peak
+      if (t > .02 && t < .999) {
+        const n = fbm(x * .055 + 11, z * .055 + 7) - .5;
+        const rr = Math.hypot(x, z) || 1;
+        P.setX(i, x + (x / rr) * n * w * .4);
+        P.setZ(i, z + (z / rr) * n * w * .4);
+        P.setY(i, y + (fbm(x * .09 + 3, z * .09) - .5) * h * .14);
+      }
+      c.copy(rock).lerp(rockD, fbm(x * .07, z * .07 + 21) * .9);
+      if (cap) c.lerp(snow, Math.max(0, Math.min(1, (t - .62) * 3.2)) * (.55 + .45 * fbm(x * .2, z * .2)));
+      col.set([c.r, c.g, c.b], i * 3);
+    }
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+  const mountainMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
   for (let i = 0; i < 22; i++) {
     const a = (i / 22) * Math.PI * 2 + rnd(-.1, .1), r = rnd(300, 380), h = rnd(50, 130), w = rnd(60, 120);
-    const mt = new THREE.Mesh(new THREE.ConeGeometry(w, h, 6 + Math.floor(rnd(0, 3))), new THREE.MeshStandardMaterial({ color: shade(0x6e86a0, rnd(.85, 1.1)), flatShading: true, roughness: 1 }));
+    const mt = new THREE.Mesh(mountainGeo(w, h, 7 + Math.floor(rnd(0, 3)), h > 85), mountainMat);
     mt.position.set(Math.cos(a) * r, h / 2 - 8, Math.sin(a) * r);
     mt.rotation.y = rnd(0, 6); mt.userData.k = rnd(.85, 1.1);
     scene.add(mt); mountainMeshes.push(mt);
-    if (h > 85) {
-      const cap = new THREE.Mesh(new THREE.ConeGeometry(w * .3, h * .28, 6), new THREE.MeshStandardMaterial({ color: 0xf2f6fa, flatShading: true, roughness: 1 }));
-      cap.position.set(mt.position.x, h - 8 - h * .14 + 0.5, mt.position.z); cap.rotation.y = mt.rotation.y;
-      scene.add(cap); mt.userData.cap = cap;
-    }
   }
 
   // ---------- arena: walls, props ----------
@@ -907,7 +1202,7 @@
     obstacles.push(o);
     return o;
   }
-  const concreteMat = new THREE.MeshStandardMaterial({ map: TEX.concrete, roughness: .95 });
+  const concreteMat = new THREE.MeshStandardMaterial({ map: TEX.concrete, normalMap: normalMaps().concrete, normalScale: new THREE.Vector2(.85, .85), roughness: .93 });
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: .7, metalness: .4 });
   function addWall(x, z, w, d) {
     const h = 4;
@@ -940,22 +1235,255 @@
     }
     return null;
   }
+  // ---------- trees ----------
+  // Real trees are branches, not a stack of cones. Each one is built as a single
+  // triangle soup: a tapered trunk, then whorls of drooping branches whose needle
+  // clusters give the ragged silhouette that reads as a conifer from any distance.
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const DOWN = V3(0, -1, 0);
+  function Soup() { return { p: [], n: [], c: [] }; }
+  const _sa = V3(), _sb = V3();
+  function soupTri(B, a, b, c, ca, cb, cc) {
+    const n = _sa.subVectors(b, a).cross(_sb.subVectors(c, a));
+    if (n.lengthSq() < 1e-13) return;
+    n.normalize();
+    B.p.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    for (let i = 0; i < 3; i++) B.n.push(n.x, n.y, n.z);
+    const C = [ca, cb || ca, cc || ca];
+    for (const q of C) B.c.push(q.r, q.g, q.b);
+  }
+  function soupGeo(B) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(B.p, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(B.n, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(B.c, 3));
+    g.computeBoundingSphere();
+    return g;
+  }
+  // a tapered limb from one point to another, optionally bowing as it goes
+  function soupStem(B, from, to, r0, r1, col0, col1, seg = 6, bend, steps = 2) {
+    const axis = V3().subVectors(to, from), L = axis.length();
+    if (L < 1e-5) return;
+    axis.multiplyScalar(1 / L);
+    const side = Math.abs(axis.y) > .95 ? V3(1, 0, 0) : V3().crossVectors(axis, V3(0, 1, 0)).normalize();
+    const fwd = V3().crossVectors(axis, side);
+    const ring = (t, r) => {
+      const c = V3().lerpVectors(from, to, t);
+      if (bend) c.addScaledVector(bend, t * t);
+      const out = [];
+      for (let i = 0; i < seg; i++) {
+        const a = i / seg * Math.PI * 2;
+        out.push(c.clone().addScaledVector(side, Math.cos(a) * r).addScaledVector(fwd, Math.sin(a) * r));
+      }
+      return out;
+    };
+    let prev = ring(0, r0), pc = col0;
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps, cur = ring(t, r0 + (r1 - r0) * t), cc = col0.clone().lerp(col1, t);
+      for (let i = 0; i < seg; i++) {
+        const j = (i + 1) % seg;
+        soupTri(B, prev[i], prev[j], cur[i], pc, pc, cc);
+        soupTri(B, prev[j], cur[j], cur[i], pc, cc, cc);
+      }
+      prev = cur; pc = cc;
+    }
+  }
+  // One branch of needles: a drooping spine with clusters alternating off each
+  // side, and smaller twigs branching off that in turn. The second level is what
+  // fills a conifer in — a single row of needles reads as a bare stick.
+  function soupFrond(B, origin, dir, len, droop, width, colA, colB, steps, sub) {
+    const d = dir.clone().normalize();
+    const side = V3(-d.z, 0, d.x);
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+    side.normalize();
+    const pt = t => origin.clone().addScaledVector(d, len * t).addScaledVector(DOWN, droop * len * t * t);
+    let prev = pt(0);
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps, cur = pt(t), w = width * (1 - t * .55);
+      const cA = colA.clone().lerp(colB, t * .45);
+      for (const sgn of [1, -1]) {
+        const tip = cur.clone().addScaledVector(side, sgn * w).addScaledVector(d, -len * .06).addScaledVector(DOWN, w * .28);
+        soupTri(B, prev, cur, tip, cA, cA, colB);
+        // a second pair, swept further back, so the branch has thickness in silhouette
+        const tip2 = cur.clone().addScaledVector(side, sgn * w * .62).addScaledVector(d, -len * .13).addScaledVector(DOWN, -w * .3);
+        soupTri(B, prev, cur, tip2, cA, cA, colB);
+      }
+      if (sub > 0 && i > 1 && i < steps) {
+        for (const sgn of [1, -1]) {
+          const nd = d.clone().addScaledVector(side, sgn * rnd(.55, .95)).addScaledVector(DOWN, .12).normalize();
+          soupFrond(B, cur, nd, len * rnd(.34, .52), droop * 1.25, width * .78, cA, colB, Math.max(3, steps - 3), sub - 1);
+        }
+      }
+      prev = cur;
+    }
+  }
+  // a broadleaf cluster: a ragged lens of leaves on the end of a limb
+  function soupLeaves(B, origin, r, flat, colA, colB, blades) {
+    for (let i = 0; i < blades; i++) {
+      const a = i / blades * 6.283 + rnd(-.3, .3), rr = r * rnd(.6, 1);
+      const d = V3(Math.cos(a), rnd(-.12, .3), Math.sin(a)).normalize();
+      soupFrond(B, origin.clone().add(V3(rnd(-.2, .2) * r, rnd(-.1, .1) * r * flat, rnd(-.2, .2) * r)),
+        d, rr, rnd(.05, .3), rr * .4, colA.clone().multiplyScalar(rnd(.82, 1.05)), colB, 4, 1);
+    }
+  }
+  // ---------- grass ----------
+  // Grass grows in tufts, so one instance is a whole clump of curved, tapering
+  // blades rather than a single spike. Each blade is dark at the root and pale at
+  // the tip, which is most of what makes a lawn read as depth rather than paint.
+  function grassTuftGeo(blades, h, seg, spread) {
+    const B = Soup();
+    const dark = new THREE.Color(0x55682f);
+    for (let i = 0; i < blades; i++) {
+      const a = rnd(0, 6.283), lean = rnd(.2, .62), hh = h * rnd(.55, 1.2);
+      const dir = V3(Math.cos(a), 0, Math.sin(a));
+      const base = dir.clone().multiplyScalar(rnd(0, spread));
+      const side = V3(-dir.z, 0, dir.x);
+      const w0 = h * rnd(.028, .05);
+      const tipC = new THREE.Color(0xf4ffe0), midC = new THREE.Color(0xcfdcb0);
+      let pl = null, pr = null, pc = null;
+      for (let k = 0; k <= seg; k++) {
+        const t = k / seg;
+        const c = base.clone().addScaledVector(dir, lean * hh * t * t);
+        c.y = hh * Math.sin(t * 1.3) / Math.sin(1.3);
+        const w = w0 * (1 - t * t * .96);
+        const l = c.clone().addScaledVector(side, -w), r = c.clone().addScaledVector(side, w);
+        const col = dark.clone().lerp(t > .6 ? tipC : midC, Math.pow(t, .55));
+        if (pl) {
+          soupTri(B, pl, pr, r, pc, pc, col);
+          soupTri(B, pl, r, l, pc, col, col);
+        }
+        pl = l; pr = r; pc = col;
+      }
+    }
+    const g = soupGeo(B);
+    // A blade lit by its true facet normal goes black the moment it turns edge on.
+    // Leaning every normal toward the sky is the standard dodge, and it is also
+    // closer to the truth: a blade is round in section, not a flat card.
+    const nn = g.attributes.normal.array;
+    for (let i = 0; i < nn.length; i += 3) {
+      const ny = nn[i + 1] + 1.25, l = Math.hypot(nn[i], ny, nn[i + 2]) || 1;
+      nn[i] /= l; nn[i + 1] = ny / l; nn[i + 2] /= l;
+    }
+    return g;
+  }
+  // Foliage shaded by its facet normals looks like a pile of shards. Leaning each
+  // normal toward the line out of the middle of the crown shades the canopy like
+  // the rounded mass it is, which is the oldest trick in vegetation rendering.
+  function canopyNormals(g, cy) {
+    const P = g.attributes.position.array, N = g.attributes.normal.array;
+    for (let i = 0; i < N.length; i += 3) {
+      const dx = P[i], dy = P[i + 1] - cy, dz = P[i + 2];
+      const l = Math.hypot(dx, dy, dz) || 1;
+      const nx = N[i] * .45 + dx / l * .55, ny = N[i + 1] * .45 + dy / l * .55, nz = N[i + 2] * .45 + dz / l * .55;
+      const m = Math.hypot(nx, ny, nz) || 1;
+      N[i] = nx / m; N[i + 1] = ny / m; N[i + 2] = nz / m;
+    }
+    return g;
+  }
+  const TREE_CACHE = {};
+  // h: height, rs: spread scale, cols: needle palette, kind: pine | acacia | dead
+  function treeGeo(kind, cols, lod, variant, withTrunk) {
+    const key = kind + "|" + cols.join(",") + "|" + lod + "|" + variant + "|" + (withTrunk ? 1 : 0);
+    if (TREE_CACHE[key]) return TREE_CACHE[key];
+    const B = Soup();
+    const bark = new THREE.Color(0x3f2d1e), barkHi = new THREE.Color(0x6a4e32);
+    const h = 6.4;
+    if (kind === "dead") {
+      const limb = (from, dir, len, r, depth) => {
+        const to = from.clone().addScaledVector(dir, len);
+        soupStem(B, from, to, r, r * .6, barkHi, bark, depth > 1 ? 6 : 4, null, 1);
+        if (depth <= 0) return;
+        const n = depth > 1 ? 3 : 2;
+        for (let i = 0; i < n; i++) {
+          const a = rnd(0, 6.283), tilt = rnd(.35, .95);
+          const nd = dir.clone().addScaledVector(V3(Math.cos(a), 0, Math.sin(a)), tilt).normalize();
+          limb(to, nd, len * rnd(.5, .72), r * .6, depth - 1);
+        }
+      };
+      limb(V3(0, 0, 0), V3(rnd(-.08, .08), 1, rnd(-.08, .08)).normalize(), h * .45, .22, lod > 0 ? 3 : 2);
+      TREE_CACHE[key] = soupGeo(B); return TREE_CACHE[key];
+    }
+    if (kind === "acacia") {
+      const cA = new THREE.Color(pick(cols)), cB = cA.clone().multiplyScalar(1.3);
+      if (withTrunk) soupStem(B, V3(0, 0, 0), V3(0, h * .52, 0), .26, .13, barkHi, bark, 7, V3(rnd(-.2, .2), 0, rnd(-.2, .2)), 2);
+      const n = lod > 0 ? 5 : 3;
+      for (let i = 0; i < n; i++) {
+        const a = i / n * 6.283 + rnd(-.4, .4), out = rnd(1.1, 1.9);
+        const top = V3(Math.cos(a) * out, h * (.62 + rnd(0, .14)), Math.sin(a) * out);
+        soupStem(B, V3(0, h * .5, 0), top, .11, .05, bark, bark, 5, null, 1);
+        soupLeaves(B, top, rnd(1.2, 1.9), .3, cA, cB, lod > 0 ? 9 : 5);
+      }
+      TREE_CACHE[key] = canopyNormals(soupGeo(B), h * .62); return TREE_CACHE[key];
+    }
+    // conifer
+    const cA = new THREE.Color(pick(cols)), cB = cA.clone().lerp(new THREE.Color(0x9fc27a), .22);
+    if (withTrunk) soupStem(B, V3(0, 0, 0), V3(0, h, 0), .2, .035, barkHi, bark, lod > 0 ? 7 : 5, V3(rnd(-.12, .12), 0, rnd(-.12, .12)), 3);
+    const WH = lod > 0 ? 12 : 8, base = h * .15;
+    for (let k = 0; k < WH; k++) {
+      const t = k / (WH - 1);
+      const y = base + (h * .97 - base) * t;
+      const len = 1.95 * Math.pow(1 - t, .6) + .16;
+      const n = Math.max(3, Math.round((lod > 0 ? 9 : 6) * (1 - t * .4)));
+      const droop = .34 - t * .26, rise = .22 + t * .5;
+      const lift = cA.clone().lerp(cB, t * .5);
+      for (let i = 0; i < n; i++) {
+        const a = i / n * 6.283 + k * 1.21 + rnd(-.18, .18);
+        const d = V3(Math.cos(a), rise * rnd(.8, 1.2), Math.sin(a)).normalize();
+        // the far trees trade branch count for wider needles, so the silhouette
+        // stays solid instead of thinning out into bare sticks
+        soupFrond(B, V3(0, y, 0), d, len * rnd(.85, 1.1), droop, len * (lod > 0 ? .2 : .62),
+          lift.clone().multiplyScalar(rnd(.78, 1)), cB.clone().multiplyScalar(rnd(.8, 1)), lod > 0 ? 8 : 5, lod > 0 ? 1 : 0);
+      }
+    }
+    TREE_CACHE[key] = canopyNormals(soupGeo(B), h * .55); return TREE_CACHE[key];
+  }
+
   // pine trees that block movement (trunk collides, foliage is scenery)
   let PINE_COLS = MAPS.meadow.pineCols;
+  // A leaf and a blade of grass have no back: they are thin, they scatter light
+  // through, and the eye reads them by their own shape, not by which way the
+  // triangle happens to face. three.js flips the normal on a back face, which
+  // turns half of every tree and lawn black, so these materials keep one normal
+  // for both faces. (The patch has to go after the include: the chunk text is not
+  // in the shader yet when onBeforeCompile runs.)
+  const noBackFlip = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace("#include <normal_fragment_begin>",
+      "#include <normal_fragment_begin>\n\tnormal = normalize( vNormal );");
+  };
+  const foliageMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .88, metalness: 0, side: THREE.DoubleSide });
+  foliageMat.shadowSide = THREE.DoubleSide;
+  foliageMat.onBeforeCompile = noBackFlip;
+  // Wind lives in the vertex shader: the blades bend by the square of their height,
+  // and the phase comes from each tuft's own position so a gust crosses the field
+  // instead of every blade moving as one.
+  const windU = { value: 0 };
+  const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, metalness: 0, side: THREE.DoubleSide });
+  grassMat.onBeforeCompile = sh => {
+    sh.uniforms.uWind = windU;
+    noBackFlip(sh);
+    sh.vertexShader = "uniform float uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        vec3 wOrg = instanceMatrix[3].xyz;
+      #else
+        vec3 wOrg = vec3(0.0);
+      #endif
+      float bendK = transformed.y * transformed.y * 3.0;
+      float ph = uWind * 1.7 + wOrg.x * 0.32 + wOrg.z * 0.44;
+      float gust = 0.62 + 0.38 * sin(uWind * 0.37 + wOrg.x * 0.045 + wOrg.z * 0.03);
+      transformed.x += (sin(ph) * 0.12 + sin(ph * 2.3 + 1.1) * 0.045) * bendK * gust;
+      transformed.z += (cos(ph * 0.87) * 0.10 + sin(ph * 3.1) * 0.03) * bendK * gust;
+      transformed.y -= abs(transformed.x) * 0.12;`);
+  };
   function pineFoliage(h, rScale) {
-    const g = new THREE.Group(), col = pick(PINE_COLS);
-    if (curMap.tree === "acacia") {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(2.3 * rScale, 10, 6), new THREE.MeshStandardMaterial({ color: col, flatShading: true, roughness: 1 })); m.scale.y = .32; m.position.y = 2.6; m.castShadow = true; g.add(m); return g;
-    }
-    if (curMap.tree === "dead") {
-      for (let k = 0; k < 5; k++) { const br = new THREE.Mesh(new THREE.BoxGeometry(.12, 1.7, .12), new THREE.MeshStandardMaterial({ color: col, roughness: 1 })); const a = k / 5 * 6.28; br.position.set(Math.cos(a) * .5, 2.1 + k * .35, Math.sin(a) * .5); br.rotation.set(Math.sin(a) * .8, 0, -Math.cos(a) * .8); br.castShadow = true; g.add(br); }
-      return g;
-    }
-    for (let k = 0; k < 4; k++) {
-      const r = (1.9 - k * .38) * rScale, ch = h * .34;
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(r, ch, 9), new THREE.MeshStandardMaterial({ color: shade(col, 1 + k * .05), flatShading: true, roughness: 1 }));
-      cone.position.y = h * .28 + k * ch * .62; cone.castShadow = true; g.add(cone);
-    }
+    const g = new THREE.Group();
+    const kind = curMap.tree === "acacia" ? "acacia" : curMap.tree === "dead" ? "dead" : "pine";
+    // phones take the coarse tree even up close: ten full ones is most of a frame
+    const m = new THREE.Mesh(treeGeo(kind, PINE_COLS, COARSE ? 0 : 1, Math.floor(R() * 4), false), foliageMat);
+    const k = h / 6.4;
+    m.scale.set(k * rScale, k, k * rScale);
+    m.rotation.y = rnd(0, 6.283);
+    m.castShadow = true;
+    g.add(m);
     return g;
   }
   // harvestable trees: shoot them for wood; they fall when chopped and new ones grow elsewhere
@@ -965,11 +1493,11 @@
   const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
   function spawnTree(x, z) {
     const root = new THREE.Group(); root.position.set(x, 0, z); scene.add(root);
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.22, .34, 3, 8), barkMat);
-    trunk.position.y = 1.5; trunk.castShadow = trunk.receiveShadow = true; trunk.userData.surface = "wood"; root.add(trunk);
-    const f = pineFoliage(rnd(5, 7.5), rnd(.8, 1.1)); f.position.y = -1.5 + 1.1; trunk.add(f);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.15, .3, 4.4, 9), barkMat);
+    trunk.position.y = 2.2; trunk.castShadow = trunk.receiveShadow = true; trunk.userData.surface = "wood"; root.add(trunk);
+    const f = pineFoliage(rnd(5.4, 7.8), rnd(.78, 1.02)); f.position.y = -2.2 + 1.5; trunk.add(f);
     const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.3, 4.6, 2.3), proxyMat); proxy.position.y = 3.7; root.add(proxy);
-    const obs = { mesh: trunk, x, z, hw: .38, hd: .38, y0: 0, y1: 3, block: true, stand: true, hp: Infinity };
+    const obs = { mesh: trunk, x, z, hw: .34, hd: .34, y0: 0, y1: 4.4, block: true, stand: true, hp: Infinity };
     obstacles.push(obs);
     const t = { root, trunk, proxy, obs, x, z, hp: 10, maxHp: 10, shake: 0, fall: null };
     trunk.userData.tree = t; proxy.userData.tree = t; proxy.userData.surface = "wood";
@@ -991,7 +1519,7 @@
     const s = rnd(1.5, 2.6), sp = spotFor(s * .9); if (!sp) continue;
     const h = s * rnd(.85, 1);
     const geo = boxUV(new THREE.BoxGeometry(s, h, s), s, h, s, s);
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: TEX.crate, roughness: .9 }));
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: TEX.crate, normalMap: normalMaps().wood, normalScale: new THREE.Vector2(.7, .7), roughness: .88 }));
     m.position.set(sp[0], h / 2, sp[1]); m.rotation.y = 0;
     addProp(m, sp[0], sp[1], s / 2, s / 2, h, true, "wood");
     // corner brackets
@@ -1035,13 +1563,13 @@
   for (let i = 0; i < M.layout.barriers; i++) {
     const L = 3.2, sp = spotFor(2); if (!sp) continue;
     const turned = R() < .5;
-    const mat = new THREE.MeshStandardMaterial({ map: TEX.barrier, roughness: .9 });
+    const mat = new THREE.MeshStandardMaterial({ map: TEX.barrier, normalMap: normalMaps().wood, normalScale: new THREE.Vector2(.6, .6), roughness: .88 });
     const m = new THREE.Mesh(boxUV(new THREE.BoxGeometry(turned ? .8 : L, 1, turned ? L : .8), turned ? .8 : L, 1, turned ? L : .8, 3.2), mat);
     m.position.set(sp[0], .5, sp[1]);
     addProp(m, sp[0], sp[1], turned ? .4 : L / 2, turned ? L / 2 : .4, 1);
   }
   // map-specific extras
-  const stoneMat = (c) => new THREE.MeshStandardMaterial({ map: TEX.concrete, color: c, roughness: .95 });
+  const stoneMat = (c) => new THREE.MeshStandardMaterial({ map: TEX.concrete, normalMap: normalMaps().concrete, normalScale: new THREE.Vector2(.9, .9), color: c, roughness: .93 });
   if (M.extras.includes("cactus")) {
     const cm = new THREE.MeshStandardMaterial({ color: 0x4f7f3a, roughness: .9, flatShading: true });
     for (let i = 0; i < 8; i++) {
@@ -1387,19 +1915,32 @@
   for (let i = 0; i < TREE_COUNT; i++) { const sp = spotFor(1.6); if (sp) spawnTree(sp[0], sp[1]); }
   // scenery that doesn't collide: grass tufts, flowers, rocks, forest outside the walls
   (function scatter() {
-    const N = Math.round((COARSE ? 2500 : 6000) * M.grass.n), geo = new THREE.ConeGeometry(.045, .5, 3); geo.translate(0, .25, 0);
-    const inst = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), N);
+    const N = Math.round((COARSE ? 2000 : 9000) * M.grass.n);
+    const gh = (M.grass.h[0] + M.grass.h[1]) * .5;
+    const geo = grassTuftGeo(COARSE ? 5 : 7, gh * 2.1, 3, gh * .72);
+    const inst = new THREE.InstancedMesh(geo, grassMat, N);
+    inst.castShadow = false; inst.receiveShadow = true;
     const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
     let n = 0;
     while (n < N) {
-      const x = rnd(-ARENA + 1, ARENA - 1), z = rnd(-ARENA + 1, ARENA - 1);
-      if (inObstacle(x, z)) continue;
-      e.set(rnd(-.35, .35), rnd(0, 6.28), rnd(-.35, .35)); q.setFromEuler(e);
-      s.set(rnd(.6, 1.1), rnd(.35, .95), rnd(.6, 1.1)); p.set(x, 0, z);
-      inst.setMatrixAt(n, mtx.compose(p, q, s));
-      c.setHSL(rnd(M.grass.h[0], M.grass.h[1]), rnd(M.grass.s[0], M.grass.s[1]), rnd(M.grass.l[0], M.grass.l[1])); inst.setColorAt(n, c);
-      n++;
+      // tufts come in patches, the way grass actually grows
+      const cx = rnd(-ARENA + 1, ARENA - 1), cz = rnd(-ARENA + 1, ARENA - 1), cn = Math.min(N - n, 2 + Math.floor(R() * 5));
+      for (let j = 0; j < cn; j++) {
+        const x = cx + rnd(-1.3, 1.3), z = cz + rnd(-1.3, 1.3);
+        if (Math.abs(x) > ARENA - 1 || Math.abs(z) > ARENA - 1 || inObstacle(x, z)) continue;
+        e.set(rnd(-.14, .14), rnd(0, 6.283), rnd(-.14, .14)); q.setFromEuler(e);
+        const k = rnd(.5, 1.3);
+        inst.setMatrixAt(n, mtx.compose(p.set(x, 0, z), q, s.set(k, k * rnd(.45, 1.5), k)));
+        // a real sward is never one colour: some of it is in seed, some of it dry
+        const dry = R() < .22;
+        c.setHSL(rnd(M.grass.h[0], M.grass.h[1]) + (dry ? .035 : 0),
+          rnd(M.grass.s[0], M.grass.s[1]) * (dry ? .85 : 1),
+          rnd(M.grass.l[0], M.grass.l[1]) * rnd(.72, 1.25) + (dry ? .08 : 0));
+        inst.setColorAt(n, c);
+        n++;
+      }
     }
+    inst.count = n;
     worldRoot.add(inst);
     // flowers
     const F = M.flowers ? 220 : 0, fg = new THREE.SphereGeometry(.07, 6, 5); fg.translate(0, .38, 0);
@@ -1421,17 +1962,35 @@
     }
     // forest ring (instanced)
     const T = M.forest === "none" ? 0 : (COARSE ? 160 : 380), FC = M.forestCols || PINE_COLS;
-    const trunkI = new THREE.InstancedMesh(new THREE.CylinderGeometry(.25, .4, 3.4, 6), new THREE.MeshStandardMaterial({ color: 0x4f3722, roughness: 1 }), T);
-    const cones = [0, 1, 2].map(k => new THREE.InstancedMesh(new THREE.ConeGeometry(2.3 - k * .6, 3.4, 7), new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 }), T));
-    for (let i = 0; i < T; i++) {
-      let x, z; do { const a = rnd(0, 6.28), r = rnd(50, 170); x = Math.cos(a) * r; z = Math.sin(a) * r; } while (Math.abs(x) < FLAT + 3 && Math.abs(z) < FLAT + 3);
-      const k = rnd(.9, 2.2), y = terrainH(x, z), rot = rnd(0, 6), col = new THREE.Color(pick(FC)).multiplyScalar(rnd(.8, 1.2));
-      q.setFromEuler(e.set(0, rot, 0));
-      trunkI.setMatrixAt(i, mtx.compose(p.set(x, y + 1.7 * k, z), q, s.set(k, k, k)));
-      cones.forEach((ci, j) => { ci.setMatrixAt(i, mtx.compose(p.set(x, y + (3.2 + j * 2.1) * k, z), q, s.set(k, k, k))); ci.setColorAt(i, col); });
+    if (M.forest === "spires") {
+      // the rock spires of the dry and industrial maps, not trees
+      const spire = new THREE.InstancedMesh(new THREE.ConeGeometry(2.3, 9, 7), new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 }), T);
+      for (let i = 0; i < T; i++) {
+        let x, z; do { const a = rnd(0, 6.28), r = rnd(50, 170); x = Math.cos(a) * r; z = Math.sin(a) * r; } while (Math.abs(x) < FLAT + 3 && Math.abs(z) < FLAT + 3);
+        const k = rnd(.9, 2.2), y = terrainH(x, z);
+        q.setFromEuler(e.set(0, rnd(0, 6), 0));
+        spire.setMatrixAt(i, mtx.compose(p.set(x, y + 4.4 * k, z), q, s.set(k, k, k)));
+        spire.setColorAt(i, new THREE.Color(pick(FC)).multiplyScalar(rnd(.8, 1.2)));
+      }
+      worldRoot.add(spire);
+    } else if (T) {
+      // the far forest: the same tree model at a coarse level of detail, in four
+      // shapes so the ring does not read as one tree copied three hundred times
+      const kind = M.tree === "acacia" ? "acacia" : M.tree === "dead" ? "dead" : "pine";
+      const VARIANTS = 4, per = Math.ceil(T / VARIANTS);
+      for (let v = 0; v < VARIANTS; v++) {
+        const im = new THREE.InstancedMesh(treeGeo(kind, FC, 0, v, true), foliageMat, per);
+        im.castShadow = false; im.receiveShadow = false;
+        for (let i = 0; i < per; i++) {
+          let x, z; do { const a = rnd(0, 6.28), r = rnd(50, 170); x = Math.cos(a) * r; z = Math.sin(a) * r; } while (Math.abs(x) < FLAT + 3 && Math.abs(z) < FLAT + 3);
+          const k = rnd(.85, 2.1), y = terrainH(x, z);
+          q.setFromEuler(e.set(0, rnd(0, 6.283), 0));
+          im.setMatrixAt(i, mtx.compose(p.set(x, y, z), q, s.set(k * rnd(.85, 1.15), k, k * rnd(.85, 1.15))));
+          im.setColorAt(i, new THREE.Color(0xffffff).multiplyScalar(rnd(.78, 1.12)));
+        }
+        worldRoot.add(im);
+      }
     }
-    if (M.forest === "spires") trunkI.visible = false;
-    worldRoot.add(trunkI); cones.forEach(ci => worldRoot.add(ci));
   })();
 
     worldTarget = scene; unseedRng();
@@ -1442,12 +2001,17 @@
     curMap = M; PINE_COLS = M.pineCols;
     const u = sky.material.uniforms;
     u.top.value.setHex(M.top); u.mid.value.setHex(M.mid); u.hor.value.setHex(M.fog); u.sunCol.value.set(...M.sunCol); u.glow.value = M.glow; u.starK.value = M.stars;
-    scene.background.setHex(M.fog); scene.fog.color.setHex(M.fog); scene.fog.near = M.near; scene.fog.far = M.far;
-    hemi.color.setHex(M.hemi[0]); hemi.groundColor.setHex(M.hemi[1]); hemi.intensity = M.hemi[2];
-    sun.color.setHex(M.sun[0]); sun.intensity = M.sun[1];
+    u.haze.value = M.haze === undefined ? 1 : M.haze;
+    scene.background.setHex(M.fog); scene.fog.color.setHex(M.fog); scene.fog.near = M.near * FOG_K; scene.fog.far = M.far * FOG_K;
+    // the map files are written in the old, pre-linear numbers; these two factors
+    // carry them into linear light, where a sun has to be far stronger than the sky
+    hemi.color.setHex(M.hemi[0]); hemi.groundColor.setHex(M.hemi[1]); hemi.intensity = M.hemi[2] * HEMI_K;
+    sun.color.setHex(M.sun[0]); sun.intensity = M.sun[1] * SUN_K;
     concreteMat.color.setHex(M.wall);
     paintGround(M);
-    mountainMeshes.forEach(mt => { mt.material.color.setHex(shade(M.mount.col, mt.userData.k)); if (mt.userData.cap) mt.userData.cap.visible = M.mount.cap; });
+    // the rock is in the vertices now, so the map tints the whole range at once
+    mountainMat.color.setHex(M.mount.col).multiplyScalar(1 / 0.43);
+    mountainMeshes.forEach(mt => { mt.visible = true; });
     clouds.forEach(c => { c.visible = M.cloudK > 0; c.material.opacity = Math.min(.95, c.userData.op * M.cloudK); });
     buildWorld(M);
   }
@@ -1713,6 +2277,18 @@
     brass: new THREE.MeshStandardMaterial({ color: 0xc9a23c, metalness: .9, roughness: .3 }),
     shell: new THREE.MeshStandardMaterial({ color: 0xc23a2a, metalness: 0, roughness: .6 })
   };
+  // Machined steel is never mirror smooth: it carries tool marks, and polymer is
+  // moulded with a grain. A fine normal map on the shared weapon materials gives
+  // every gun in the game that surface at once.
+  (() => {
+    const N = normalMaps();
+    const fine = N.metal.clone(); fine.needsUpdate = true; fine.repeat.set(9, 9);
+    const grain = N.cloth.clone(); grain.needsUpdate = true; grain.repeat.set(7, 7);
+    for (const k of ["metal", "steel", "brass"]) { GM[k].normalMap = fine; GM[k].normalScale = new THREE.Vector2(.35, .35); }
+    for (const k of ["poly", "olive", "tan"]) { GM[k].normalMap = grain; GM[k].normalScale = new THREE.Vector2(.3, .3); }
+    for (const k of ["glove", "sleeve"]) { GM[k].normalMap = N.cloth; GM[k].normalScale = new THREE.Vector2(.5, .5); }
+    GM.wood.normalMap = N.wood; GM.wood.normalScale = new THREE.Vector2(.4, .4);
+  })();
   const gunModels = {};
   function paintGun(g, col) {
     const bright = new THREE.MeshStandardMaterial({ color: col, metalness: .85, roughness: .25, emissive: col, emissiveIntensity: .35 });
@@ -2646,19 +3222,8 @@
   // ---- HUD effects: hit markers, damage numbers, notices, banner, minimap ----
   const $id = id => document.getElementById(id);
   const hitmEl = $id("hitm"), flashEl = $id("flash"), vigEl = $id("vig"), crossEl = $id("cross"), rldEl = $id("rld");
-  // the grain layer: a small tile of noise, repeated and nudged around by CSS
-  try {
-    const gc = document.createElement("canvas"); gc.width = gc.height = 96;
-    const gg = gc.getContext("2d"), im = gg.createImageData(96, 96);
-    for (let i = 0; i < im.data.length; i += 4) {
-      const v = 128 + (Math.random() - .5) * 118;
-      im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
-    }
-    gg.putImageData(im, 0, 0);
-    // phones pay for a blended full-screen layer, so they get the vignette only
-    if (COARSE) $id("grain").style.display = "none";
-    else $id("grain").style.backgroundImage = "url(" + gc.toDataURL() + ")";
-  } catch (_) { $id("grain").style.display = "none"; }
+  // grain and the vignette are done in the post-processing shader now, where they
+  // land on the image itself instead of on a blended layer above it
   const numsEl = $id("dmgnums"), notesEl = $id("notes"), bannerEl = $id("banner"), dirEl = $id("dmgdir");
   const mm = $id("minimap"), mctx = mm.getContext("2d");
   let hurtVig = 0, crossGap = 6, crossTick = 0, crossOnEnemy = false, mmTick = 0;
@@ -3105,9 +3670,9 @@
   // enemies
   const enemies = [], corpses = [];
   const ENEMY_TYPES = {
-    grunt: { scale: 1,    hp: 3, speed: 1,    dmg: 8,  uniform: 0xa32a2a, armor: 0x3b3f46, skin: 0xd9a27c, rate: 1 },
-    scout: { scale: 0.88, hp: 2, speed: 1.55, dmg: 6,  uniform: 0xd47a22, armor: 0x5a4a3a, skin: 0xc58f6a, rate: 0.8 },
-    heavy: { scale: 1.22, hp: 7, speed: 0.7,  dmg: 12, uniform: 0x5a1a22, armor: 0x23252b, skin: 0xb98563, rate: 1.4 }
+    grunt: { scale: 1,    hp: 3, speed: 1,    dmg: 8,  uniform: 0x8a3a30, armor: 0x3b3f46, skin: 0xd9a27c, rate: 1 },
+    scout: { scale: 0.88, hp: 2, speed: 1.55, dmg: 6,  uniform: 0xb07a2c, armor: 0x5a4a3a, skin: 0xc58f6a, rate: 0.8 },
+    heavy: { scale: 1.22, hp: 7, speed: 0.7,  dmg: 12, uniform: 0x4e2428, armor: 0x23252b, skin: 0xb98563, rate: 1.4 }
   };
   // a soldier: tapered limbs, a neck, webbing and a real helmet rather than a stack of cubes
   function buildEnemy(type, wep) {
@@ -3117,7 +3682,10 @@
     // cosmetic only, so it uses plain Math.random and never touches the seeded arena stream
     const jr = (a, b) => a + Math.random() * (b - a);
     const jit = k => { const c = new THREE.Color(k); c.offsetHSL(jr(-.02, .02), jr(-.06, .04), jr(-.05, .05)); return c.getHex(); };
-    const uni = M(jit(T.uniform), .95, 0), uniD = M(jit(shade(T.uniform, .62)), .95, 0);
+    const uni = M(jit(T.uniform), .97, 0), uniD = M(jit(shade(T.uniform, .62)), .97, 0);
+    // woven cloth, not painted plastic
+    uni.normalMap = uniD.normalMap = normalMaps().cloth;
+    uni.normalScale = uniD.normalScale = new THREE.Vector2(.5, .5);
     const armor = M(shade(T.armor, .8), .6, .3), dark = M(0x1c1d21, .7, .2), webbing = M(shade(T.armor, .62), .95, 0);
     const skinHex = jit(T.skin), skin = M(skinHex, .72, 0), skinD = M(shade(skinHex, .82), .78, 0);
     const boot = M(0x24201c, .8, .05), glove = M(0x2a2622, .85, .05);
@@ -3532,7 +4100,7 @@
     notify("\u2605 EXCLUSIVE CHEST SPAWNED \u2605", "#ff4dff", "find the magenta beam!"); popup("EXCLUSIVE CHEST!", "#ff4dff");
     flashScreen(.25, "#ff4dff"); try { sfx.chime(3); setTimeout(() => sfx.chime(3), 350); } catch (_) {}
   }
-  const chestWood = new THREE.MeshStandardMaterial({ map: TEX.crate, roughness: .85 });
+  const chestWood = new THREE.MeshStandardMaterial({ map: TEX.crate, normalMap: normalMaps().wood, normalScale: new THREE.Vector2(.7, .7), roughness: .85 });
   const chestMetal = new THREE.MeshStandardMaterial({ color: 0x3b3e45, metalness: .75, roughness: .4 });
   const chestGold = new THREE.MeshStandardMaterial({ color: 0xd1a93a, metalness: .9, roughness: .3 });
   const glowDiscGeo = new THREE.CircleGeometry(1, 32);
@@ -5689,6 +6257,7 @@
   addEventListener("resize", () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    if (POST) POST.resize(innerWidth, innerHeight);
   });
 
   // ---- profile: name and picture, kept in this browser and shown to friends online ----
@@ -7165,9 +7734,9 @@
   // Every part is one continuous smooth surface. A section can be deeper below the spine
   // than above it (ryT / ryB), which is what gives a dog its deep chest and flat back.
   // The coat markings are painted into the vertices, so nothing is stuck on as a separate lump.
-  const DOGC = { coat: 0x6d4525, dark: 0x3f2611, tan: 0xa26c38, white: 0xf4efe6, nose: 0x191210 };
+  const DOGC = { coat: 0x8a5a2e, dark: 0x33200f, tan: 0xbd8445, white: 0xf7f3ea, nose: 0x1c1512 };
   function sweepHull(sections, colorAt, seg = 16, capStart = true, capEnd = true) {
-    const pos = [], col = [], idx = [], tmp = new THREE.Color(), V = THREE.Vector3;
+    const pos = [], col = [], uvs = [], idx = [], tmp = new THREE.Color(), V = THREE.Vector3;
     let carry = null, prevT = null;
     for (let i = 0; i < sections.length; i++) {
       const s = sections[i], c = new V(s.c[0], s.c[1], s.c[2]);
@@ -7195,25 +7764,80 @@
         const fz = s.fuzz ? 1 + s.fuzz * ((Math.sin(j * 127.1 + i * 31.7) * 43758.5453) % 1) : 1;
         const v = c.clone().addScaledVector(right, sq(w) * s.rx * fz).addScaledVector(up, sq(h) * ry * fz);
         pos.push(v.x, v.y, v.z);
+        uvs.push(j / seg, i / (sections.length - 1));        // round the section, then along the spine
         tmp.set(colorAt(v, h, w, i / (sections.length - 1), s)); col.push(tmp.r, tmp.g, tmp.b);
       }
     }
     for (let i = 0; i < sections.length - 1; i++) for (let j = 0; j < seg; j++) {
       const a = i * seg + j, b = i * seg + (j + 1) % seg, c = (i + 1) * seg + j, d = (i + 1) * seg + (j + 1) % seg;
-      idx.push(a, c, b, b, c, d);
+      idx.push(a, b, c, b, d, c);           // wound so the normals face out of the body
     }
     const capAt = (ri, out) => {
       const s = sections[ri], c = new V(s.c[0], s.c[1], s.c[2]), base = pos.length / 3;
-      pos.push(c.x, c.y, c.z); tmp.set(colorAt(c, 0, 0, ri / (sections.length - 1), s)); col.push(tmp.r, tmp.g, tmp.b);
-      for (let j = 0; j < seg; j++) { const a = ri * seg + j, b = ri * seg + (j + 1) % seg; out ? idx.push(base, b, a) : idx.push(base, a, b); }
+      pos.push(c.x, c.y, c.z); uvs.push(.5, ri / (sections.length - 1)); tmp.set(colorAt(c, 0, 0, ri / (sections.length - 1), s)); col.push(tmp.r, tmp.g, tmp.b);
+      for (let j = 0; j < seg; j++) { const a = ri * seg + j, b = ri * seg + (j + 1) % seg; out ? idx.push(base, a, b) : idx.push(base, b, a); }
     };
     if (capStart) capAt(0, false);
     if (capEnd) capAt(sections.length - 1, true);
     const gm = new THREE.BufferGeometry();
     gm.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     gm.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    gm.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
     gm.setIndex(idx); gm.computeVertexNormals();
     return gm;
+  }
+  // ---------- fur ----------
+  // A coat modelled as one smooth surface reads as painted plastic however good the
+  // markings are. Real fur here is built in shells: the coat mesh is drawn several
+  // times, each copy pushed a little further out along its own normals, and a noise
+  // texture decides which hairs are long enough to survive each layer. Looking
+  // through four of them you see strands, with the gaps between them letting the
+  // darker skin show at the roots — which is what the eye reads as fur.
+  const FUR_WHITE = (() => {
+    const c = document.createElement("canvas"); c.width = c.height = 1;
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, 1, 1);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.LinearEncoding; return t;
+  })();
+  const FUR_SHELLS = COARSE ? 0 : 4, FUR_NOISE = (() => {
+    // one cell per hair, holding how long that hair is
+    const t = canvasTex(512, 512, (g, w, h) => {
+      const CELL = 6;
+      g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+      for (let y = 0; y < h; y += CELL) for (let x = 0; x < w; x += CELL) {
+        const v = Math.round(30 + 225 * Math.pow(R(), .6));
+        g.fillStyle = "rgb(" + v + "," + v + "," + v + ")";
+        g.beginPath();
+        g.arc(x + CELL * .5 + rnd(-.8, .8), y + CELL * .5 + rnd(-.8, .8), CELL * .34, 0, 6.284);
+        g.fill();
+      }
+    });
+    t.encoding = THREE.LinearEncoding;             // this is strand length, not colour
+    return t;
+  })();
+  function furShell(src, len, rx, ry, root, lay) {
+    if (!FUR_SHELLS || !src.geometry.attributes.uv) return;
+    const tex = FUR_NOISE.clone();
+    tex.needsUpdate = true; tex.repeat.set(rx, ry);
+    for (let i = 1; i <= FUR_SHELLS; i++) {
+      const t = i / FUR_SHELLS;
+      const m = new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: .97, metalness: 0, side: THREE.DoubleSide,
+        alphaMap: tex, alphaTest: .06 + t * .74
+      });
+      m.color.setScalar((root === undefined ? .5 : root) + (1 - (root === undefined ? .5 : root)) * t);
+      // Push the shell out along the surface normal. This uses the displacement
+      // map rather than a custom uniform on purpose: three.js caches a program by
+      // the text of onBeforeCompile, so thirty-odd shells sharing one function
+      // would share one uniform and all sit in the same place.
+      m.displacementMap = FUR_WHITE;
+      m.displacementScale = len * t;
+      const sh = new THREE.Mesh(src.geometry, m);
+      // Straight-out shells look like moss. Sliding each layer a little the way the
+      // coat lies combs the hairs, which is most of what sells fur in motion.
+      if (lay) sh.position.set(lay[0] * len * t, lay[1] * len * t, lay[2] * len * t);
+      sh.castShadow = false; sh.receiveShadow = false;
+      src.add(sh);
+    }
   }
   function buildDog() {
     const g = new THREE.Group();
@@ -7235,7 +7859,7 @@
       const xr = Math.abs(v.x) / (sec.rx || 1);          // how far round the side the vertex sits
       const under = sm(-.45, -.75, yr) * (1 - sm(.45, .8, xr));   // the underside strip only
       let c = DOGC.coat;
-      c = mix(c, DOGC.dark, sm(.15, .7, yr) * .95 * sm(-.37, -.28, z) * (1 - sm(.24, .36, z)));   // mantle down the back
+      c = mix(c, DOGC.dark, sm(-.2, .5, yr) * .92 * sm(-.46, -.32, z) * (1 - sm(.24, .4, z)));   // the saddle, down over the ribs
       c = mix(c, DOGC.tan, sm(.1, -.5, yr) * .28 * sm(-.3, -.1, z) * (1 - sm(.04, .24, z)));       // warm flank
       c = mix(c, DOGC.white, under * sm(-.18, -.02, z) * (1 - sm(.2, .3, z)));                     // white belly strip
       c = mix(c, DOGC.white, sm(.3, .4, z) * sm(.3, -.3, yr) * (1 - sm(.75, .95, xr)));            // white collar
@@ -7244,7 +7868,7 @@
       return c;
     };
     const body = new THREE.Group(); g.add(body);
-    mesh(sweepHull([
+    const bodyMesh = mesh(sweepHull([
       { c: [0, .478, -.36], rx: .075, ryT: .065, ryB: .075 },
       { c: [0, .472, -.29], rx: .132, ryT: .092, ryB: .14 },
       { c: [0, .462, -.19], rx: .152, ryT: .1, ryB: .175, box: .25 },
@@ -7271,7 +7895,7 @@
       return c;
     };
     const head = new THREE.Group(); head.position.set(0, .652, .442); body.add(head);
-    mesh(sweepHull([
+    const headMesh = mesh(sweepHull([
       { c: [0, -.014, -.095], rx: .072, ryT: .065, ryB: .065 },
       { c: [0, .0, -.045], rx: .098, ryT: .095, ryB: .086 },
       { c: [0, .008, .015], rx: .104, ryT: .096, ryB: .098, box: .3 },    // skull
@@ -7311,24 +7935,35 @@
         const n = new THREE.Mesh(new THREE.SphereGeometry(.0062, 6, 5), eyeMat);
         n.position.set(sx * .0335, -.0345, .2325); n.scale.set(.8, .7, .9); head.add(n);
       }
-      // ear: a flat blade standing at the base, with the top third folded forward
-      const ear = new THREE.Group(); ear.position.set(sx * .062, .064, -.004); ear.rotation.set(.06, sx * .3, sx * .1); head.add(ear);
-      const earPaint = (v, h) => mix(mix(DOGC.coat, DOGC.dark, .5), DOGC.white, sm(.1, .9, -h) * .4);
-      mesh(sweepHull([
-        { c: [0, -.01, 0], rx: .05, ryT: .02, ryB: .02 },
-        { c: [0, .04, 0], rx: .047, ryT: .018, ryB: .018 },
-        { c: [0, .085, 0], rx: .038, ryT: .015, ryB: .015 },
+      // The ear: a broad triangular blade carried upright with the top third tipped
+      // forward, which is the shape a collie is known for. Dark and furry on the
+      // back, bare and warm-toned inside.
+      const ear = new THREE.Group(); ear.position.set(sx * .058, .062, -.006); ear.rotation.set(.1, sx * .34, sx * .13); head.add(ear);
+      const earPaint = (v, h, w, t) => {
+        // h is the sine of the way round the section: +1 is the back of the ear,
+        // -1 the inside
+        let c = mix(DOGC.coat, DOGC.dark, sm(-.1, .85, h) * .85);
+        c = mix(c, 0xc49a7e, sm(.1, -.75, h) * .8 * (1 - sm(.55, .95, t)));   // bare inner skin
+        return mix(c, DOGC.white, sm(.6, 1, t) * .35);
+      };
+      const earMesh = mesh(sweepHull([
+        { c: [0, -.014, .004], rx: .058, ryT: .016, ryB: .016 },
+        { c: [0, .028, .002], rx: .055, ryT: .015, ryB: .015 },
+        { c: [0, .07, 0], rx: .044, ryT: .013, ryB: .013 },
+        { c: [0, .098, -.002], rx: .034, ryT: .011, ryB: .011 },
       ], earPaint, LSEG), ear);
-      const tip = new THREE.Group(); tip.position.set(0, .085, 0); tip.rotation.x = -.85; ear.add(tip);
-      mesh(sweepHull([
-        { c: [0, 0, 0], rx: .038, ryT: .015, ryB: .015 },
-        { c: [0, .032, 0], rx: .026, ryT: .011, ryB: .011 },
-        { c: [0, .055, 0], rx: .012, ryT: .007, ryB: .007 },
+      const tip = new THREE.Group(); tip.position.set(0, .098, -.002); tip.rotation.x = -.92; ear.add(tip);
+      const tipMesh = mesh(sweepHull([
+        { c: [0, 0, 0], rx: .034, ryT: .011, ryB: .011 },
+        { c: [0, .03, 0], rx: .024, ryT: .009, ryB: .009 },
+        { c: [0, .052, 0], rx: .009, ryT: .006, ryB: .006 },
       ], earPaint, LSEG), tip);
+      furShell(earMesh, .007, 5, 4, .55);
+      furShell(tipMesh, .005, 4, 3, .55);
     }
 
     // the ruff: the collar of long coat a collie carries round its neck and chest
-    mesh(sweepHull([
+    const ruffMesh = mesh(sweepHull([
       { c: [0, .49, .255], rx: .151, ryT: .118, ryB: .2 },
       { c: [0, .505, .3], rx: .165, ryT: .13, ryB: .19, fuzz: .1 },
       { c: [0, .525, .345], rx: .162, ryT: .128, ryB: .165, fuzz: .16 },
@@ -7338,16 +7973,17 @@
     ], (v, h, w, t, sec) => {
       const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
       return mix(mix(DOGC.coat, DOGC.dark, sm(.45, .95, yr) * .8), DOGC.white, sm(.45, -.1, yr));
-    }, SEG, false, false), body).material = furTwoSided;
+    }, SEG, false, false), body);
+    ruffMesh.material = furTwoSided;
 
     // ---------- legs: shoulder to elbow, then elbow through pastern to paw ----------
     const coatPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.tan, sm(.3, 1, t) * .35);
     const pawPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.white, sm(.42, .72, t));
-    const legs = [];
+    const legs = [], legFur = [], legFur2 = [];
     for (const sx of [-1, 1]) for (const sz of [1, -1]) {
       const front = sz > 0;
       const hip = new THREE.Group(); hip.position.set(sx * (front ? .092 : .1), front ? .4 : .41, front ? .22 : -.2); g.add(hip);
-      mesh(sweepHull(front ? [
+      const hipMesh = mesh(sweepHull(front ? [
         { c: [0, .055, .012], rx: .08, ryT: .09, ryB: .09 },       // shoulder, buried in the body
         { c: [0, -.01, .006], rx: .058, ryT: .066, ryB: .066 },
         { c: [0, -.07, 0], rx: .042, ryT: .048, ryB: .048 },
@@ -7358,8 +7994,9 @@
         { c: [0, -.07, .014], rx: .068, ryT: .08, ryB: .092, fuzz: .06 },
         { c: [0, -.125, .022], rx: .04, ryT: .047, ryB: .047 },      // stifle
       ], coatPaint, LSEG), hip);
+      legFur.push(hipMesh);
       const knee = new THREE.Group(); knee.position.y = front ? -.115 : -.125; hip.add(knee);
-      mesh(sweepHull(front ? [
+      const kneeMesh = mesh(sweepHull(front ? [
         { c: [0, .01, -.004], rx: .04, ryT: .044, ryB: .044 },
         { c: [0, -.09, -.004], rx: .034, ryT: .037, ryB: .037 },
         { c: [0, -.185, .004], rx: .031, ryT: .032, ryB: .032 },    // pastern
@@ -7379,12 +8016,13 @@
         { c: [0, -.286, .076], rx: .024, ryT: .012, ryB: .012 },
         { c: [0, -.288, .089], rx: .012, ryT: .008, ryB: .008 },
       ], pawPaint, LSEG), knee);
+      legFur2.push(kneeMesh);
       legs.push({ hip, knee, back: !front, phase: (sx > 0 ? 0 : Math.PI) + (front ? 0 : Math.PI) });
     }
 
     // ---------- tail: thick at the root, plumed through the middle, white at the tip ----------
     const tail = new THREE.Group(); tail.position.set(0, .458, -.375); g.add(tail);
-    mesh(sweepHull([
+    const tailMesh = mesh(sweepHull([
       { c: [0, .015, .025], rx: .055, ryT: .052, ryB: .052 },
       { c: [0, -.025, -.06], rx: .072, ryT: .072, ryB: .072, fuzz: .1 },
       { c: [0, -.075, -.145], rx: .07, ryT: .072, ryB: .07, fuzz: .14 },
@@ -7393,6 +8031,16 @@
       { c: [0, -.258, -.316], rx: .027, ryT: .03, ryB: .027, fuzz: .08 },
       { c: [0, -.3, -.334], rx: .012, ryT: .013, ryB: .012 },
     ], (v, h, w, t) => mix(mix(DOGC.coat, DOGC.dark, sm(.1, .7, h) * .45), DOGC.white, sm(.66, .9, t)), LSEG), tail);
+
+    // ---------- grow the coat ----------
+    // Short fuzz everywhere breaks the silhouette; the ruff, the trousers and the
+    // tail carry the long coat a collie is known for. Phones skip it.
+    furShell(bodyMesh, .024, 11, 7, .42, [0, -.35, -.5]);
+    furShell(ruffMesh, .05, 10, 3.6, .34, [0, -.75, -.2]);
+    furShell(tailMesh, .042, 7, 6, .4, [0, -.55, -.5]);
+    for (const hm of legFur) furShell(hm, .019, 5.5, 3, .45, [0, -.8, -.2]);
+    for (const km of legFur2) furShell(km, .009, 5, 7, .5, [0, -.7, 0]);
+    furShell(headMesh, .0085, 8, 7, .55, [0, -.2, -.6]);
 
     g.scale.setScalar(1.04);
     return { g, body, head, tail, legs };
@@ -7528,7 +8176,7 @@
   const G = 4, PIECE_COST = 10, BUILD_TYPES = ["wall", "floor", "ramp"];
   const builds = [], buildMap = new Map();
   const buildState = { on: false, type: "wall", mats: 150 };
-  const buildMat = new THREE.MeshStandardMaterial({ map: TEX.plank, roughness: .9 });
+  const buildMat = new THREE.MeshStandardMaterial({ map: TEX.plank, normalMap: normalMaps().wood, normalScale: new THREE.Vector2(.6, .6), roughness: .88 });
   const ghostOk = new THREE.MeshBasicMaterial({ color: 0x44ff88, transparent: true, opacity: 0.4, depthWrite: false });
   const ghostBad = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.4, depthWrite: false });
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -7926,6 +8574,7 @@
     }
     updateCorpses(dt);
 
+    windU.value += dt;
     stepMissiles(dt); stepGrenades(dt); stepSpecials(dt); stepPickups(dt); stepDrops(dt); stepDog(dt); stepFires(dt); stepTrees(dt);
 
     // chests & effects
@@ -8001,7 +8650,7 @@
     stepParticles(dt); stepTracers(dt); stepDecals(dt); stepFx(dt);
     updateHudFx(dt, moveAmt, rp, nowMs);
 
-    renderer.render(scene, camera);
+    if (POST) POST.render(dt); else renderer.render(scene, camera);
   }
   updateHud();
   loop();
