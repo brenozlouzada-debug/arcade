@@ -96,7 +96,28 @@ Eight more after that: **Aurora Tundra** (ice spires under a green aurora sky), 
 
 ## A more realistic look and feel
 
-The picture goes through a filmic tone curve, so bright sky, snow and muzzle flashes roll off into highlights instead of clipping to flat white, and a faint lens vignette and film grain sit over the frame (the grain is skipped on phones).
+The whole renderer was rebuilt around how light actually behaves.
+
+**Colour.** Every colour in the game is written the way you would pick it in a paint program, as an sRGB hex. Light does not add or multiply correctly in that space, so the renderer now converts each colour into linear light on the way in and back out again at the very end, and tells the textures they hold sRGB pixels. three.js only started doing this for you in a much later version than the one here, so the game does it itself. Doing it wrong is the single thing that makes a renderer look flat and chalky; this is why the grass has depth now and the wood looks like wood.
+
+**The sky.** The old sky was three colours blended together. The new one is shaped the way air behaves: the band near the horizon is bright because you are looking through far more atmosphere, the sun smears a warm halo forward into that band, the disc has a soft edge instead of a hard circle, and the ground bounces a little light back up from below. The same sky is prefiltered into an environment map, so it is also what lights the shadowed side of everything in the world.
+
+**The sun sits lower.** A sun overhead flattens everything it touches. This one is partway down the sky, so shadows are long and shape reads properly.
+
+**Post-processing.** The scene is rendered into a floating point buffer with the tone mapping off, so highlights keep their real brightness. The bright parts are blurred into a bloom, and one final shader does the film look in a single pass: exposure, the ACES curve, a grade, a touch of colour separation toward the corners the way a real lens has, a vignette, grain, and the conversion back to sRGB. The old CSS vignette and grain layers are gone — these land on the image itself rather than on a sheet above it. Phones keep the direct path, where the canvas gives them free antialiasing.
+
+**Surfaces.** Ground, concrete, wood, metal, cloth and every weapon in the game carry a normal map derived from a height sketch drawn on a canvas, so a flat polygon catches light like a rough surface.
+
+
+## Grass, trees and the horizon
+
+**Grass grows in tufts.** It used to be single flat spikes scattered one to a square metre. Now one instance is a whole clump of curved, tapering blades, dark at the root and pale at the tip, and the clumps come in patches the way grass actually grows. Some of it is in seed and some of it dried off, and heights vary widely, because a real sward is never one colour or one length. The whole field bends in the wind: the blades lean by the square of their height, and the phase comes from each tuft's own position, so a gust crosses the field instead of every blade moving as one.
+
+A blade of grass has no back — it is thin, it scatters light through, and the eye reads it by its own shape. three.js flips the normal on a back face, which was turning half the lawn black, so the grass and the leaves now keep one sky-leaning normal on both faces.
+
+**Trees are branches, not stacked cones.** Each tree is built as a single mesh: a tapered trunk that leans, then whorls of drooping branches, each one carrying needle clusters that alternate off its spine with smaller twigs branching off those in turn. That second level is what fills a conifer in — a single row of needles reads as a bare stick. The crown is shaded off a normal leaning out of the middle of the tree rather than off each facet, so it reads as the rounded mass it is. The far forest uses the same model at a coarse level of detail in four shapes, so the ring does not look like one tree copied three hundred times, and it trades branch count for wider needles so the silhouette stays solid.
+
+**The horizon.** A smooth cone reads as cut paper. The mountains now have their ridges pushed about with noise, and the rock is painted into the vertices with snow that follows height and flat ground instead of sitting on top as a separate white hat.
 
 The gun and the camera behave more like a real one in your hands:
 
@@ -174,6 +195,12 @@ With it on, every match starts with a dog at your heel, in survival, free play a
 The dog is a modelled mesh, not an assembly of spheres and boxes. Each part — body, head, ears, four legs, tail and the ruff — is one continuous surface swept along a spine from real cross sections, so it has a deep chest that reaches the elbow, a tucked loin, a sloping croup, an angled hock, a skull with a stop and a blunt muzzle. The section frame is carried from one ring to the next, which is what keeps a vertical leg from twisting and tearing.
 
 The markings are painted into the vertices rather than stuck on as extra pieces: a dark mantle over the back, warm tan down the flanks, a white belly strip, white chest and collar, white socks, a white tail tip, and the blaze running up the muzzle between the eyes. The ruff, trousers and tail carry a ragged edge so the coat reads as fur.
+
+**It is furry.** A coat modelled as one smooth surface reads as painted plastic however good the markings are, because what the eye looks for is the broken edge. The fur is built in shells: the coat mesh is drawn four times over, each copy pushed a little further out along its own normals, and a noise texture holding one hair per cell decides which hairs are long enough to survive each layer. Looking through four of them you see strands, with the darker skin showing between them at the roots. Each layer also slides a little the way the coat lies, which combs it — straight-out shells look like moss. The body, the ruff, the trousers, the tail, the head and the ears each have their own hair length and direction. Phones skip it.
+
+Fixing this turned up an older bug: the hull builder that makes the dog was winding its triangles inside out, so every normal pointed into the body. It had been rendering by accident, because a two-sided material flips the normal on a back face and that happened to undo it. The winding is right now, which is also why the coat is lit properly for the first time.
+
+**Its ears are collie ears**: a broad triangular blade carried upright with the top third tipped forward, dark and furry on the back, bare and warm-toned inside.
 
 It has proper eyes. Each one is a brown eyeball set into the skull at the stop, just proud of the surface the way a real eye sits, with a dark pupil on the front, a white catchlight, and a dark almond lid rim around it slanted so the eye is not a circle. The nose has two nostrils in the same way. It costs 27 meshes and 4,900 triangles, and phones build a lighter version (23 meshes, 2,600 triangles).
 
