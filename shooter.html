@@ -426,7 +426,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-15.0210</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-15.0940</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -7734,7 +7734,7 @@
   // Every part is one continuous smooth surface. A section can be deeper below the spine
   // than above it (ryT / ryB), which is what gives a dog its deep chest and flat back.
   // The coat markings are painted into the vertices, so nothing is stuck on as a separate lump.
-  const DOGC = { coat: 0x8a5a2e, dark: 0x33200f, tan: 0xbd8445, white: 0xf7f3ea, nose: 0x1c1512 };
+  const DOGC = { coat: 0x8a5a2e, dark: 0x241509, tan: 0xbd8445, white: 0xf7f3ea, nose: 0x1c1512 };
   function sweepHull(sections, colorAt, seg = 16, capStart = true, capEnd = true) {
     const pos = [], col = [], uvs = [], idx = [], tmp = new THREE.Color(), V = THREE.Vector3;
     let carry = null, prevT = null;
@@ -7793,6 +7793,14 @@
   // texture decides which hairs are long enough to survive each layer. Looking
   // through four of them you see strands, with the gaps between them letting the
   // darker skin show at the roots — which is what the eye reads as fur.
+  // Dark guard hair on a dog is glossy — it is what gives a dark-coated dog that
+  // hard sheen along the back — while the pale undercoat is soft and matt. three.js
+  // has no per-vertex roughness, so the shader reads it off how dark the vertex
+  // colour is, which is exactly the signal we want.
+  const FUR_SHEEN = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace("#include <roughnessmap_fragment>",
+      "#include <roughnessmap_fragment>\n\tfloat furLum = dot( vColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );\n\troughnessFactor *= mix( 0.56, 1.0, smoothstep( 0.0, 0.26, furLum ) );");
+  };
   const FUR_WHITE = (() => {
     const c = document.createElement("canvas"); c.width = c.height = 1;
     const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, 1, 1);
@@ -7831,6 +7839,7 @@
       // would share one uniform and all sit in the same place.
       m.displacementMap = FUR_WHITE;
       m.displacementScale = len * t;
+      m.onBeforeCompile = FUR_SHEEN;
       const sh = new THREE.Mesh(src.geometry, m);
       // Straight-out shells look like moss. Sliding each layer a little the way the
       // coat lies combs the hairs, which is most of what sells fur in motion.
@@ -7842,6 +7851,7 @@
   function buildDog() {
     const g = new THREE.Group();
     const fur = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .93, metalness: 0, side: THREE.DoubleSide });
+    fur.onBeforeCompile = FUR_SHEEN;
     const furTwoSided = fur;
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0x120c07, roughness: .15, metalness: .2 });
     const shineMat = new THREE.MeshBasicMaterial({ color: 0xf6f2ea });
@@ -7851,69 +7861,90 @@
     const mesh = (geo, parent) => { const m = new THREE.Mesh(geo, fur); m.castShadow = !COARSE; (parent || g).add(m); return m; };
     const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), Math.max(0, Math.min(1, t)));
     const sm = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+    // Markings are measured against how wide the body is at that point, not in
+    // absolute units — otherwise the blaze that looks right on the forehead
+    // swallows the whole muzzle, which is narrower. A real marking has a crisp
+    // edge that wobbles: these two give the edge somewhere to wobble to.
+    const wob = v => Math.sin(v.x * 47.3 + v.y * 31.1 + v.z * 23.7) * .028 + Math.sin(v.z * 71.9 - v.x * 53.4) * .016;
+    const across = (v, sec) => Math.abs(v.x) / (sec.rx || 1);                       // 0 centre line, 1 widest
+    const upDown = (v, sec) => (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
+    const most = (a, b) => a + b - a * b;                                           // union of two markings
 
     // ---------- body: tail root, croup, loin tuck, deep ribcage, shoulder, arched neck ----------
     const bodyPaint = (v, h, w, t, sec) => {
-      const z = v.z;
-      const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
-      const xr = Math.abs(v.x) / (sec.rx || 1);          // how far round the side the vertex sits
-      const under = sm(-.45, -.75, yr) * (1 - sm(.45, .8, xr));   // the underside strip only
+      const z = v.z, xr = across(v, sec), yr = upDown(v, sec), k = wob(v);
       let c = DOGC.coat;
-      c = mix(c, DOGC.dark, sm(-.2, .5, yr) * .92 * sm(-.46, -.32, z) * (1 - sm(.24, .4, z)));   // the saddle, down over the ribs
-      c = mix(c, DOGC.tan, sm(.1, -.5, yr) * .28 * sm(-.3, -.1, z) * (1 - sm(.04, .24, z)));       // warm flank
-      c = mix(c, DOGC.white, under * sm(-.18, -.02, z) * (1 - sm(.2, .3, z)));                     // white belly strip
-      c = mix(c, DOGC.white, sm(.3, .4, z) * sm(.3, -.3, yr) * (1 - sm(.75, .95, xr)));            // white collar
-      c = mix(c, DOGC.white, sm(.14, .26, z) * sm(-.2, -.6, yr) * (1 - sm(.6, .9, xr)));           // white chest
-      c = mix(c, DOGC.dark, sm(.36, .44, z) * sm(.35, .85, yr) * .85);                             // dark crest of the neck
+      // The saddle: it drapes over the back and down the ribs, stopping well short
+      // of the belly. This is the marking that says collie from fifty metres.
+      c = mix(c, DOGC.dark, sm(-.72 + k * 2, -.06 + k * 2, yr) * sm(-.4, -.31, z) * (1 - sm(.25, .35, z)));
+      c = mix(c, DOGC.tan, sm(-.1, -.62, yr) * .3 * sm(-.3, -.12, z) * (1 - sm(.0, .2, z)));   // warm flank below it
+      c = mix(c, DOGC.dark, sm(.34, .42, z) * sm(.2, .8, yr) * .9);                            // dark crest of the neck
+      // A full white collar all the way round, with a crisp edge front and back.
+      const collar = sm(.255 + k, .3 + k, z) * (1 - sm(.4 + k, .45 + k, z));
+      c = mix(c, DOGC.white, collar);
+      c = mix(c, DOGC.white, sm(.1, .19, z) * sm(-.42 + k * 3, -.68 + k * 3, yr) * (1 - sm(.5, .7, xr)));    // chest bib
+      c = mix(c, DOGC.white, sm(-.3 + k * 3, -.62 + k * 3, yr) * (1 - sm(.4, .72, xr)) * sm(-.2, -.04, z) * (1 - sm(.16, .26, z)));  // belly
       return c;
     };
     const body = new THREE.Group(); g.add(body);
+    // A collie is a working dog: narrow side to side, deep from the withers down to
+    // the elbow, and clearly cut up at the loin. The old sections were a barrel —
+    // nearly as wide as they were deep, with no waist.
     const bodyMesh = mesh(sweepHull([
-      { c: [0, .478, -.36], rx: .075, ryT: .065, ryB: .075 },
-      { c: [0, .472, -.29], rx: .132, ryT: .092, ryB: .14 },
-      { c: [0, .462, -.19], rx: .152, ryT: .1, ryB: .175, box: .25 },
-      { c: [0, .458, -.07], rx: .134, ryT: .09, ryB: .158, box: .35 },
-      { c: [0, .452, .04], rx: .15, ryT: .104, ryB: .198, box: .45 },
-      { c: [0, .448, .15], rx: .156, ryT: .108, ryB: .222, box: .45 },   // deepest point, down at the elbow
-      { c: [0, .452, .25], rx: .15, ryT: .114, ryB: .205, box: .3 },
-      { c: [0, .478, .32], rx: .128, ryT: .102, ryB: .168 },
-      { c: [0, .532, .365], rx: .118, ryT: .094, ryB: .13 },             // base of the neck, thick with ruff
-      { c: [0, .585, .4], rx: .1, ryT: .082, ryB: .105 },
-      { c: [0, .632, .428], rx: .088, ryT: .073, ryB: .088 },
+      { c: [0, .474, -.40], rx: .062, ryT: .058, ryB: .062 },            // tail set, low on the croup
+      { c: [0, .478, -.33], rx: .108, ryT: .082, ryB: .118 },
+      { c: [0, .470, -.235], rx: .128, ryT: .094, ryB: .158, box: .2 },  // hindquarter: muscle, not fat
+      { c: [0, .458, -.135], rx: .108, ryT: .082, ryB: .132, box: .3 },
+      { c: [0, .452, -.045], rx: .094, ryT: .074, ryB: .108, box: .35 }, // the tuck-up, the waist of the dog
+      { c: [0, .448, .055], rx: .116, ryT: .09, ryB: .178, box: .45 },
+      { c: [0, .444, .16], rx: .126, ryT: .098, ryB: .236, box: .45 },   // brisket: deepest point, down at the elbow
+      { c: [0, .452, .255], rx: .126, ryT: .104, ryB: .216, box: .3 },
+      { c: [0, .482, .325], rx: .112, ryT: .098, ryB: .17 },
+      { c: [0, .538, .368], rx: .102, ryT: .088, ryB: .128 },            // base of the neck, thick with ruff
+      { c: [0, .592, .402], rx: .088, ryT: .076, ryB: .1 },
+      { c: [0, .638, .43], rx: .078, ryT: .068, ryB: .082 },
     ], bodyPaint, SEG), body);
 
     // ---------- head ----------
     const headPaint = (v, h, w, t, sec) => {
-      const z = v.z, side = Math.abs(v.x);
-      const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
-      let c = mix(DOGC.coat, DOGC.dark, sm(.25, .85, yr) * .7 * (1 - sm(.04, .14, z)));     // dark skull cap
-      c = mix(c, DOGC.tan, sm(-.1, -.7, yr) * .3 * sm(.1, -.04, z));                         // tan cheeks
-      c = mix(c, DOGC.white, sm(.042, .014, side) * sm(-.03, .04, z) * sm(.1, .55, yr));      // blaze between the eyes
-      c = mix(c, DOGC.white, sm(.05, .018, side) * sm(.07, .125, z) * sm(-.3, .35, yr));       // blaze down the muzzle
-      c = mix(c, DOGC.white, sm(-.55, -.9, yr) * sm(-.06, .06, z) * (1 - sm(.14, .22, z)));    // white chin and throat
-      c = mix(c, DOGC.nose, sm(.205, .232, z) * sm(-.9, -.3, yr) + sm(.222, .238, z));         // nose leather
+      const z = v.z, xr = across(v, sec), yr = upDown(v, sec), k = wob(v);
+      let c = mix(DOGC.coat, DOGC.dark, sm(.1, .8, yr) * .9 * (1 - sm(.0, .12, z)));          // dark skull and cheeks
+      c = mix(c, DOGC.dark, sm(.5, .1, xr) * sm(-.02, .05, z) * sm(-.2, .4, yr) * .5);         // shading round the eyes
+      // The blaze: a narrow stripe between the eyes that widens as it runs down
+      // the face, meeting the white that comes up from the chin and throat.
+      const bw = .28 + .36 * sm(-.02, .15, z);
+      const blaze = sm(bw + .1 + k, bw - .02 + k, xr) * sm(-.11, -.04, z);
+      const under = sm(-.34 + k * 3, -.62 + k * 3, yr);                                        // chin, throat, lower muzzle
+      c = mix(c, DOGC.white, most(blaze, under) * (1 - sm(.174, .2, z)));
+      c = mix(c, DOGC.nose, sm(.206, .224, z) * sm(-.9, -.2, yr) + sm(.221, .232, z));         // nose leather
       return c;
     };
     const head = new THREE.Group(); head.position.set(0, .652, .442); body.add(head);
     const headMesh = mesh(sweepHull([
-      { c: [0, -.014, -.095], rx: .072, ryT: .065, ryB: .065 },
-      { c: [0, .0, -.045], rx: .098, ryT: .095, ryB: .086 },
-      { c: [0, .008, .015], rx: .104, ryT: .096, ryB: .098, box: .3 },    // skull
-      { c: [0, -.004, .06], rx: .09, ryT: .066, ryB: .085, box: .3 },     // brow into the stop
-      { c: [0, -.02, .1], rx: .062, ryT: .052, ryB: .066 },
-      { c: [0, -.03, .155], rx: .057, ryT: .047, ryB: .061, box: .25 },   // a blunt muzzle, not a snout
-      { c: [0, -.036, .2], rx: .052, ryT: .043, ryB: .055, box: .3 },
-      { c: [0, -.038, .228], rx: .044, ryT: .038, ryB: .045 },
-      { c: [0, -.04, .244], rx: .026, ryT: .024, ryB: .026 },
+      { c: [0, -.012, -.1], rx: .074, ryT: .068, ryB: .068 },
+      { c: [0, .004, -.045], rx: .104, ryT: .1, ryB: .09 },
+      { c: [0, .012, .018], rx: .112, ryT: .102, ryB: .104, box: .3 },    // skull, broad between the ears
+      { c: [0, -.002, .058], rx: .094, ryT: .07, ryB: .09, box: .3 },     // brow into the stop
+      // From here the foreface: about as long as the skull and deep through, so it
+      // reads as a wedge in profile. Longer and finer than this and the dog turns
+      // into a fox; shorter and it is a terrier.
+      { c: [0, -.012, .098], rx: .063, ryT: .048, ryB: .072, box: .25 },
+      { c: [0, -.016, .145], rx: .058, ryT: .044, ryB: .066, box: .3 },
+      { c: [0, -.02, .185], rx: .053, ryT: .042, ryB: .06, box: .3 },
+      { c: [0, -.023, .212], rx: .048, ryT: .04, ryB: .052, box: .25 },
+      { c: [0, -.025, .228], rx: .039, ryT: .036, ryB: .04 },    // the nose is a blunt block, not a point
+      { c: [0, -.026, .237], rx: .026, ryT: .025, ryB: .026 },
     ], headPaint, SEG), head);
     // the lower jaw and cheeks, blended into the skull
     mesh(sweepHull([
-      { c: [0, -.055, -.02], rx: .088, ryT: .052, ryB: .044 },
-      { c: [0, -.058, .035], rx: .077, ryT: .046, ryB: .04 },
-      { c: [0, -.056, .085], rx: .056, ryT: .036, ryB: .032 },
-      { c: [0, -.055, .14], rx: .046, ryT: .028, ryB: .026 },
-      { c: [0, -.055, .2], rx: .038, ryT: .021, ryB: .021 },
+      { c: [0, -.055, -.02], rx: .086, ryT: .052, ryB: .044 },
+      { c: [0, -.058, .035], rx: .074, ryT: .046, ryB: .04 },
+      { c: [0, -.058, .09], rx: .056, ryT: .038, ryB: .034 },
+      { c: [0, -.057, .14], rx: .049, ryT: .032, ryB: .029 },
+      { c: [0, -.056, .185], rx: .042, ryT: .027, ryB: .024 },
+      { c: [0, -.055, .215], rx: .031, ryT: .02, ryB: .018 },
     ], headPaint, SEG), head);
+    const ears = [];
     for (const sx of [-1, 1]) {
       // the eye: an almond lid rim with the ball set into it, aimed out and forward
       const eye = new THREE.Group();
@@ -7933,12 +7964,13 @@
       }
       if (!COARSE) {   // the nostril, a dark crease in the nose leather
         const n = new THREE.Mesh(new THREE.SphereGeometry(.0062, 6, 5), eyeMat);
-        n.position.set(sx * .0335, -.0345, .2325); n.scale.set(.8, .7, .9); head.add(n);
+        n.position.set(sx * .025, -.026, .2295); n.scale.set(.8, .7, .9); head.add(n);
       }
       // The ear: a broad triangular blade carried upright with the top third tipped
       // forward, which is the shape a collie is known for. Dark and furry on the
       // back, bare and warm-toned inside.
-      const ear = new THREE.Group(); ear.position.set(sx * .058, .062, -.006); ear.rotation.set(.1, sx * .34, sx * .13); head.add(ear);
+      const ear = new THREE.Group(); ear.position.set(sx * .058, .066, -.028); ear.rotation.set(-.04, sx * .3, sx * .17); head.add(ear);
+      ears.push(ear);
       const earPaint = (v, h, w, t) => {
         // h is the sine of the way round the section: +1 is the back of the ear,
         // -1 the inside
@@ -7947,16 +7979,16 @@
         return mix(c, DOGC.white, sm(.6, 1, t) * .35);
       };
       const earMesh = mesh(sweepHull([
-        { c: [0, -.014, .004], rx: .058, ryT: .016, ryB: .016 },
-        { c: [0, .028, .002], rx: .055, ryT: .015, ryB: .015 },
-        { c: [0, .07, 0], rx: .044, ryT: .013, ryB: .013 },
-        { c: [0, .098, -.002], rx: .034, ryT: .011, ryB: .011 },
+        { c: [0, -.014, .006], rx: .064, ryT: .017, ryB: .017 },
+        { c: [0, .026, .003], rx: .06, ryT: .016, ryB: .016 },
+        { c: [0, .064, 0], rx: .049, ryT: .014, ryB: .014 },
+        { c: [0, .09, -.003], rx: .038, ryT: .012, ryB: .012 },
       ], earPaint, LSEG), ear);
-      const tip = new THREE.Group(); tip.position.set(0, .098, -.002); tip.rotation.x = -.92; ear.add(tip);
+      const tip = new THREE.Group(); tip.position.set(0, .09, -.003); tip.rotation.x = -.72; ear.add(tip);
       const tipMesh = mesh(sweepHull([
-        { c: [0, 0, 0], rx: .034, ryT: .011, ryB: .011 },
-        { c: [0, .03, 0], rx: .024, ryT: .009, ryB: .009 },
-        { c: [0, .052, 0], rx: .009, ryT: .006, ryB: .006 },
+        { c: [0, 0, 0], rx: .038, ryT: .012, ryB: .012 },
+        { c: [0, .028, 0], rx: .027, ryT: .01, ryB: .01 },
+        { c: [0, .048, 0], rx: .011, ryT: .006, ryB: .006 },
       ], earPaint, LSEG), tip);
       furShell(earMesh, .007, 5, 4, .55);
       furShell(tipMesh, .005, 4, 3, .55);
@@ -7964,21 +7996,24 @@
 
     // the ruff: the collar of long coat a collie carries round its neck and chest
     const ruffMesh = mesh(sweepHull([
-      { c: [0, .49, .255], rx: .151, ryT: .118, ryB: .2 },
-      { c: [0, .505, .3], rx: .165, ryT: .13, ryB: .19, fuzz: .1 },
-      { c: [0, .525, .345], rx: .162, ryT: .128, ryB: .165, fuzz: .16 },
-      { c: [0, .55, .382], rx: .143, ryT: .115, ryB: .14, fuzz: .18 },
-      { c: [0, .578, .408], rx: .112, ryT: .095, ryB: .11, fuzz: .12 },
-      { c: [0, .6, .422], rx: .088, ryT: .076, ryB: .086 },
+      { c: [0, .486, .24], rx: .14, ryT: .112, ryB: .2 },
+      { c: [0, .5, .292], rx: .148, ryT: .118, ryB: .178, fuzz: .14 },
+      { c: [0, .52, .338], rx: .152, ryT: .124, ryB: .158, fuzz: .22 },    // the mane stands out past the neck
+      { c: [0, .548, .378], rx: .142, ryT: .118, ryB: .136, fuzz: .24 },
+      { c: [0, .578, .406], rx: .116, ryT: .1, ryB: .112, fuzz: .18 },
+      { c: [0, .604, .424], rx: .094, ryT: .08, ryB: .09, fuzz: .08 },
     ], (v, h, w, t, sec) => {
       const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
-      return mix(mix(DOGC.coat, DOGC.dark, sm(.45, .95, yr) * .8), DOGC.white, sm(.45, -.1, yr));
+      // The ruff is the white collar where it is longest: white round the front and
+      // underside, dark over the crest, with a crisp line between.
+      const k = wob(v);
+      return mix(mix(DOGC.coat, DOGC.dark, sm(.0, .8, yr) * .92), DOGC.white, sm(-.12 + k * 3, -.42 + k * 3, yr));
     }, SEG, false, false), body);
     ruffMesh.material = furTwoSided;
 
     // ---------- legs: shoulder to elbow, then elbow through pastern to paw ----------
     const coatPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.tan, sm(.3, 1, t) * .35);
-    const pawPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.white, sm(.42, .72, t));
+    const pawPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.white, sm(.62, .76, t));
     const legs = [], legFur = [], legFur2 = [];
     for (const sx of [-1, 1]) for (const sz of [1, -1]) {
       const front = sz > 0;
@@ -8021,16 +8056,21 @@
     }
 
     // ---------- tail: thick at the root, plumed through the middle, white at the tip ----------
-    const tail = new THREE.Group(); tail.position.set(0, .458, -.375); g.add(tail);
+    // The tail is set on low and reaches past the hock, carried down in a long
+    // curve with the tip swinging back up — the swirl a collie shows at rest. It is
+    // heavily furnished, so the sections carry a lot of fuzz for the fur to grow on.
+    const tail = new THREE.Group(); tail.position.set(0, .446, -.405); g.add(tail);
     const tailMesh = mesh(sweepHull([
-      { c: [0, .015, .025], rx: .055, ryT: .052, ryB: .052 },
-      { c: [0, -.025, -.06], rx: .072, ryT: .072, ryB: .072, fuzz: .1 },
-      { c: [0, -.075, -.145], rx: .07, ryT: .072, ryB: .07, fuzz: .14 },
-      { c: [0, -.135, -.22], rx: .058, ryT: .062, ryB: .058, fuzz: .14 },
-      { c: [0, -.2, -.278], rx: .042, ryT: .046, ryB: .042, fuzz: .12 },
-      { c: [0, -.258, -.316], rx: .027, ryT: .03, ryB: .027, fuzz: .08 },
-      { c: [0, -.3, -.334], rx: .012, ryT: .013, ryB: .012 },
-    ], (v, h, w, t) => mix(mix(DOGC.coat, DOGC.dark, sm(.1, .7, h) * .45), DOGC.white, sm(.66, .9, t)), LSEG), tail);
+      { c: [0, .012, .022], rx: .05, ryT: .048, ryB: .048 },
+      { c: [0, -.022, -.058], rx: .066, ryT: .066, ryB: .066, fuzz: .12 },
+      { c: [0, -.082, -.132], rx: .068, ryT: .07, ryB: .068, fuzz: .2 },
+      { c: [0, -.155, -.196], rx: .062, ryT: .066, ryB: .062, fuzz: .22 },
+      { c: [0, -.236, -.244], rx: .053, ryT: .058, ryB: .053, fuzz: .22 },
+      { c: [0, -.318, -.273], rx: .043, ryT: .048, ryB: .043, fuzz: .2 },
+      { c: [0, -.396, -.279], rx: .033, ryT: .037, ryB: .033, fuzz: .16 },   // the tip starts to swing up
+      { c: [0, -.462, -.258], rx: .023, ryT: .026, ryB: .023, fuzz: .1 },
+      { c: [0, -.505, -.222], rx: .012, ryT: .013, ryB: .012 },
+    ], (v, h, w, t) => mix(mix(DOGC.coat, DOGC.dark, sm(.1, .7, h) * .5), DOGC.white, sm(.74, .93, t)), LSEG), tail);
 
     // ---------- grow the coat ----------
     // Short fuzz everywhere breaks the silhouette; the ruff, the trousers and the
@@ -8043,7 +8083,7 @@
     furShell(headMesh, .0085, 8, 7, .55, [0, -.2, -.6]);
 
     g.scale.setScalar(1.04);
-    return { g, body, head, tail, legs };
+    return { g, body, head, tail, legs, ears };
   }
   function removeDog() { if (dog) scene.remove(dog.m.g); dog = null; }
   function spawnDog() {
@@ -8053,71 +8093,182 @@
     scene.add(m.g);
     const p = player.pos.clone(); p.y = groundAt(p.x, p.z, p.y) ;
     m.g.position.set(p.x + 1.2, p.y, p.z + 1.2);
-    dog = { m, vx: 0, vz: 0, gait: 0, speed: 0, sit: 0, idle: 0, barkT: 4 + Math.random() * 6, look: null, yaw: 0 };
+    dog = {
+      m, vx: 0, vz: 0, gait: 0, speed: 0, sit: 0, idle: 0, barkT: 4 + Math.random() * 6, yaw: 0,
+      st: "idle", stT: 0, yawV: 0, crouch: 0, dartT: 0, eyeCool: 0, playerStill: 0, lastPX: p.x, lastPZ: p.z
+    };
   }
+  // ---------- how the dog moves ----------
+  // A border collie does not amble. It works in bursts: a brisk trot to position,
+  // a flat-out run to catch up, a hard dart when something cuts across it, and the
+  // crouch it is famous for — body low, head level with the shoulders, eye locked
+  // on whatever it is watching, dead still until the thing moves. Each of those is
+  // a state here, with its own speed, its own turning rate and its own pose.
+  const DOG_GAIT = {
+    //          speed  turn  stride  crouch  tail
+    idle:   { sp: 0,    yv: 3.2,  st: 0,   cr: 0,   tl: .35 },
+    sit:    { sp: 0,    yv: 2.4,  st: 0,   cr: 0,   tl: .2 },
+    creep:  { sp: 1.05, yv: 2.6,  st: .45, cr: .92, tl: 0 },     // stalking in, belly low
+    eye:    { sp: 0,    yv: 1.8,  st: 0,   cr: 1,   tl: 0 },     // holding the stare
+    trot:   { sp: 3.5,  yv: 5.0,  st: .85, cr: .12, tl: .8 },
+    run:    { sp: 8.2,  yv: 6.5,  st: 1.25, cr: .3, tl: .5 },
+    dart:   { sp: 7.0,  yv: 13.0, st: 1.1, cr: .45, tl: .3 }     // the hard cut
+  };
   function stepDog(dt) {
     if (!dog) return;
     const g = dog.m.g, p = g.position;
     const feetY = player.pos.y - 1.7;
-    // where it wants to be: a step behind your shoulder, never in your way
-    const want = new THREE.Vector3(player.pos.x - Math.sin(yaw) * -1.9 + Math.cos(yaw) * .9, 0, player.pos.z - Math.cos(yaw) * -1.9 - Math.sin(yaw) * .9);
-    const dx = want.x - p.x, dz = want.z - p.z, d = Math.hypot(dx, dz);
-    // too far behind (a wall, a fall, a teleport): it catches up out of sight
-    if (d > 26 || Math.abs(p.y - feetY) > 14) { p.set(want.x, groundAt(want.x, want.z, feetY + 1), want.z); dog.vx = dog.vz = 0; }
-    const run = clamp((d - 1.1) / 2.2, 0, 1);
-    const sp = (player.pos.y - 1.7 > p.y + 2 ? 9 : 3 + 6.5 * run) * run;
-    dog.speed += (sp - dog.speed) * Math.min(1, dt * 6);
-    if (d > .05 && dog.speed > .05) {
-      const nx = p.x + dx / d * dog.speed * dt, nz = p.z + dz / d * dog.speed * dt;
+
+    // ---- where it wants to be: a step off your left shoulder, out of your line ----
+    const heelX = player.pos.x + Math.sin(yaw) * 1.9 + Math.cos(yaw) * .9;
+    const heelZ = player.pos.z + Math.cos(yaw) * 1.9 - Math.sin(yaw) * .9;
+    let tx = heelX, tz = heelZ;
+    const dxH = heelX - p.x, dzH = heelZ - p.z, dHeel = Math.hypot(dxH, dzH);
+    // lost it entirely — a wall, a fall, a teleport — so it catches up out of sight
+    if (dHeel > 26 || Math.abs(p.y - feetY) > 14) { p.set(heelX, groundAt(heelX, heelZ, feetY + 1), heelZ); dog.vx = dog.vz = 0; }
+
+    // ---- is the player standing still? a collie reads stillness as something to watch ----
+    const pm = Math.hypot(player.pos.x - dog.lastPX, player.pos.z - dog.lastPZ) / Math.max(dt, 1e-4);
+    dog.lastPX = player.pos.x; dog.lastPZ = player.pos.z;
+    dog.playerStill = pm < .6 ? dog.playerStill + dt : 0;
+
+    // ---- what it is watching ----
+    let focus = null, fd = 1e9;
+    enemies.forEach(e => {
+      if (e.dead) return;
+      const q = Math.hypot(e.g.position.x - p.x, e.g.position.z - p.z);
+      if (q < fd) { fd = q; focus = e.g.position; }
+    });
+    const enemyNear = focus && fd < 13;
+    if (!enemyNear) { focus = null; fd = 1e9; }
+
+    // ---- the state machine ----
+    const was = dog.st;
+    dog.stT += dt;
+    dog.eyeCool = Math.max(0, dog.eyeCool - dt);
+    let st;
+    if (dHeel > 7.5 || player.pos.y - 1.7 > p.y + 2) {
+      st = "run";                                        // a long way back, or you are above it
+    } else if (dog.dartT > 0) {
+      st = "dart";
+    } else if (enemyNear) {
+      // it works the soldier: creeps in while the soldier is out there, then freezes
+      // on the eye once it is close, and breaks the stare before it goes stale
+      st = fd < 6.5 ? "eye" : "creep";
+      if (st === "eye" && was === "eye" && dog.stT > 2.4) st = "creep";
+    } else if (dHeel > 4) {
+      st = "run";
+    } else if (dHeel > 1.5) {
+      st = "trot";
+    } else if (dog.eyeCool <= 0 && dog.playerStill > 1.4) {
+      st = "eye";                                        // you stopped moving, so it watches you
+    } else {
+      st = dog.idle > 3.4 ? "sit" : "idle";
+    }
+    // a stare on the player is brief: it holds it, then relaxes and will not start
+    // another for a few seconds, or the dog spends the whole match crouching
+    if (st === "eye" && was === "eye" && !enemyNear && dog.stT > 2.2) { st = "idle"; dog.eyeCool = 7; }
+    // a hard cut: whatever it is following changed direction sharply, so it darts
+    const wantYaw0 = dHeel > .25 ? Math.atan2(dxH, dzH) : dog.yaw;
+    let turn = wantYaw0 - dog.yaw; turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+    if (dog.dartT <= 0 && Math.abs(turn) > 1.15 && dHeel > 2.2 && (st === "trot" || st === "run")) {
+      dog.dartT = .45 + Math.random() * .25; st = "dart";
+    }
+    dog.dartT = Math.max(0, dog.dartT - dt);
+    if (st !== was) { dog.st = st; dog.stT = 0; }
+    const G = DOG_GAIT[st] || DOG_GAIT.idle;
+    dog.idle = (st === "idle" || st === "sit") ? dog.idle + dt : 0;
+
+    // ---- steering: head for the heel, or hold ground and face what it is watching ----
+    if (focus && (st === "creep" || st === "eye")) {
+      // work round the side of the soldier the way a collie does, rather than at it
+      const ang = Math.atan2(p.x - focus.x, p.z - focus.z) + .55;
+      const keep = st === "eye" ? fd : Math.max(4.5, fd - 2.2);
+      tx = focus.x + Math.sin(ang) * keep; tz = focus.z + Math.cos(ang) * keep;
+    } else if (st === "eye") {
+      tx = p.x; tz = p.z;                                 // the eye on you: it holds its ground
+    }
+    const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+    const wantSp = st === "eye" ? 0 : G.sp * clamp((d - .5) / 1.6, 0, 1);
+    // it accelerates hard and stops hard: that snap is most of what reads as a dog
+    const acc = wantSp > dog.speed ? 17 : 13;
+    dog.speed += clamp(wantSp - dog.speed, -acc * dt, acc * dt);
+
+    // turning: quick, but with real angular momentum, and it banks into the corner
+    const faceT = (dog.speed > .7 && d > .3) ? Math.atan2(dx, dz)
+      : focus ? Math.atan2(focus.x - p.x, focus.z - p.z)
+      : Math.atan2(player.pos.x - p.x, player.pos.z - p.z);
+    let da = faceT - dog.yaw; da = Math.atan2(Math.sin(da), Math.cos(da));
+    const yv = clamp(da * 7, -G.yv, G.yv);
+    dog.yawV += (yv - dog.yawV) * Math.min(1, dt * 14);
+    dog.yaw += dog.yawV * dt;
+    g.rotation.y = dog.yaw;
+
+    // ---- move ----
+    if (dog.speed > .05) {
+      const nx = p.x + Math.sin(dog.yaw) * dog.speed * dt, nz = p.z + Math.cos(dog.yaw) * dog.speed * dt;
       const probe = new THREE.Vector3(nx, p.y + .4, nz);
-      collide(probe, .3, p.y);                       // it walks round crates and walls like you do
+      collide(probe, .3, p.y);                            // it walks round crates and walls like you do
       p.x = probe.x; p.z = probe.z;
     }
     p.x = clamp(p.x, -39, 39); p.z = clamp(p.z, -39, 39);
     const gy = groundAt(p.x, p.z, p.y + .6);
     p.y += (gy - p.y) * Math.min(1, dt * 12);
-    // face the way it is going, or look at you when it has caught up
-    const moving = dog.speed > .6;
-    let faceX = dx, faceZ = dz;
-    if (!moving) { faceX = player.pos.x - p.x; faceZ = player.pos.z - p.z; }
-    if (Math.hypot(faceX, faceZ) > .05) {
-      const wantYaw = Math.atan2(faceX, faceZ);
-      let da = wantYaw - dog.yaw; da = Math.atan2(Math.sin(da), Math.cos(da));
-      dog.yaw += da * Math.min(1, dt * (moving ? 7 : 3.5));
-      g.rotation.y = dog.yaw;
-    }
-    // gait: legs swing with how fast it is actually moving, body bounces on the trot
-    dog.gait += dt * (2.5 + dog.speed * 2.2);
-    const sw = Math.min(1, dog.speed / 5);
-    dog.m.legs.forEach(L => { L.hip.rotation.x = Math.sin(dog.gait * 2 + L.phase) * .75 * sw; });
-    dog.m.body.position.y = Math.abs(Math.sin(dog.gait * 2)) * .045 * sw;
-    dog.m.body.rotation.x = -sw * .07;
-    // sits down when you stand still, pops up the moment you move
-    dog.idle = moving ? 0 : dog.idle + dt;
-    const wantSit = dog.idle > 2.2 ? 1 : 0;
-    dog.sit += (wantSit - dog.sit) * Math.min(1, dt * 5);
-    g.position.y = p.y - dog.sit * .06;
-    dog.m.body.rotation.x += dog.sit * .32;
-    dog.m.legs.forEach(L => { if (L.back) { L.hip.rotation.x += dog.sit * 1.15; L.knee.rotation.x = -dog.sit * .55; } });
-    // tail: wags fast near you, slower on the run; head tracks the nearest soldier
-    const near = Math.hypot(player.pos.x - p.x, player.pos.z - p.z) < 4;
-    dog.m.tail.rotation.z = Math.sin(dog.gait * (near ? 9 : 5)) * (near ? .7 : .4);
-    dog.m.tail.rotation.x = -.2 - dog.sit * .3;
-    let best = null, bd = 16;
-    enemies.forEach(e => { const q = Math.hypot(e.g.position.x - p.x, e.g.position.z - p.z); if (q < bd) { bd = q; best = e; } });
-    if (best) {
-      const a = Math.atan2(best.g.position.x - p.x, best.g.position.z - p.z) - dog.yaw;
-      dog.m.head.rotation.y = clamp(Math.atan2(Math.sin(a), Math.cos(a)), -.9, .9);
-      dog.m.head.rotation.x = -.1;
+
+    // ---- pose ----
+    dog.crouch += (G.cr - dog.crouch) * Math.min(1, dt * (G.cr > dog.crouch ? 7 : 4));
+    dog.sit += ((st === "sit" ? 1 : 0) - dog.sit) * Math.min(1, dt * 5);
+    const lean = clamp(-dog.yawV * .075, -.3, .3);
+    const fast = Math.min(1, dog.speed / 7);
+    // the gait runs off ground speed, and the back legs slide toward the front pair
+    // as it opens up, which turns the trot into a gallop
+    dog.gait += dt * (2.2 + dog.speed * 2.6);
+    const stride = G.st * Math.min(1, .35 + dog.speed / 4.5);
+    dog.m.legs.forEach(L => {
+      const ph = L.phase + (L.back ? fast * 1.45 : 0);
+      const s1 = Math.sin(dog.gait * 2 + ph);
+      L.hip.rotation.x = s1 * .8 * stride + dog.crouch * (L.back ? .6 : .34) + dog.sit * (L.back ? 1.15 : 0);
+      // the knee folds on the lift and straightens into the stride
+      L.knee.rotation.x = -Math.max(0, Math.sin(dog.gait * 2 + ph + 1.15)) * .95 * stride
+        - dog.crouch * (L.back ? .48 : .22) - dog.sit * .55;
+      L.hip.rotation.z = lean * (L.back ? .35 : .55);
+    });
+    // body: bounces on the trot, extends and drops on the run, flat to the ground on the crouch
+    g.position.y = p.y - dog.sit * .06 - dog.crouch * .062;
+    dog.m.body.position.y = Math.abs(Math.sin(dog.gait * 2)) * .05 * stride - dog.crouch * .03;
+    dog.m.body.rotation.x = -fast * .1 + dog.sit * .32 - dog.crouch * .06;
+    dog.m.body.rotation.z = lean * .55;
+    g.rotation.z = lean * .35;
+
+    // ---- head: level on the trot, dropped and locked on the eye ----
+    const look = focus || (st === "eye" || st === "idle" || st === "sit" ? player.pos : null);
+    if (look) {
+      const a = Math.atan2(look.x - p.x, look.z - p.z) - dog.yaw;
+      dog.m.head.rotation.y += (clamp(Math.atan2(Math.sin(a), Math.cos(a)), -1.05, 1.05) - dog.m.head.rotation.y) * Math.min(1, dt * (dog.crouch > .5 ? 14 : 6));
     } else {
       dog.m.head.rotation.y *= Math.max(0, 1 - dt * 4);
-      dog.m.head.rotation.x = Math.sin(dog.gait * .7) * .06 - dog.sit * .1;
     }
-    // barks: at a soldier that gets close, otherwise just now and then
+    const headLow = dog.crouch * .34 - fast * .12 + dog.sit * -.1;
+    dog.m.head.rotation.x += (headLow + (look ? 0 : Math.sin(dog.gait * .7) * .06) - dog.m.head.rotation.x) * Math.min(1, dt * 7);
+    dog.m.head.rotation.z = lean * .3;
+    // ears prick forward on anything it is watching
+    dog.m.ears.forEach((E, i) => {
+      const sx = i ? 1 : -1, alert = look ? 1 : 0;
+      E.rotation.x += ((-.04 - alert * .16) - E.rotation.x) * Math.min(1, dt * 6);
+      E.rotation.y += ((sx * (.3 - alert * .12)) - E.rotation.y) * Math.min(1, dt * 6);
+    });
+
+    // ---- tail: wags near you, streams out on the run, straight and still on the eye ----
+    const near = dHeel < 3.2 && !focus;
+    const wag = G.tl * (near ? 1.5 : 1);
+    dog.m.tail.rotation.z = Math.sin(dog.gait * (near ? 8 : 4.5)) * wag * .55;
+    dog.m.tail.rotation.x += ((-.1 - fast * .5 + dog.crouch * .5 + dog.sit * -.3) - dog.m.tail.rotation.x) * Math.min(1, dt * 6);
+
+    // ---- barks ----
     dog.barkT -= dt;
     if (dog.barkT <= 0 && player.alive && active()) {
-      dog.barkT = best && bd < 9 ? 1.6 + Math.random() * 1.6 : 9 + Math.random() * 14;
-      sfx.bark(p, best && bd < 9);
+      dog.barkT = focus && fd < 9 ? 1.6 + Math.random() * 1.6 : 9 + Math.random() * 14;
+      sfx.bark(p, focus && fd < 9);
     }
   }
 
