@@ -196,6 +196,12 @@ The dog is a modelled mesh, not an assembly of spheres and boxes. Each part — 
 
 The markings are painted into the vertices rather than stuck on as extra pieces: a dark mantle over the back, warm tan down the flanks, a white belly strip, white chest and collar, white socks, a white tail tip, and the blaze running up the muzzle between the eyes. The ruff, trousers and tail carry a ragged edge so the coat reads as fur.
 
+**It is built like a working collie.** Lean through the barrel — narrow side to side, deep from the withers down to the elbow, with a real tuck-up at the loin instead of the barrel it used to be. The foreface is about as long as the skull and deep through, so it reads as a wedge in profile: longer and finer than that and the dog turns into a fox, shorter and it is a terrier. The tail is set on low and reaches past the hock, carried down in a long curve with the tip swinging back up — the swirl a collie shows at rest — and it is heavily furnished, so it moves as a plume rather than a stick.
+
+**The markings are measured against the dog, not in centimetres.** A blaze that looks right on the forehead swallows the whole muzzle if you give it a fixed width, because the muzzle is narrower. Every marking is now a fraction of how wide the body is at that point: the saddle draping over the back and down the ribs, a white collar all the way round, the chest bib, the socks, the tail tip, and the blaze running up between the eyes. Each edge is crisp but wobbles, the way a real marking does, rather than fading out over a centimetre.
+
+**Dark fur is glossy and white fur is matt.** That is what gives a dark-coated dog the hard sheen along its back. three.js has no per-vertex roughness, so the shader reads it off how dark the vertex colour is, which is exactly the signal we want: the saddle picks up a sheen, the ruff and socks stay soft.
+
 **It is furry.** A coat modelled as one smooth surface reads as painted plastic however good the markings are, because what the eye looks for is the broken edge. The fur is built in shells: the coat mesh is drawn four times over, each copy pushed a little further out along its own normals, and a noise texture holding one hair per cell decides which hairs are long enough to survive each layer. Looking through four of them you see strands, with the darker skin showing between them at the roots. Each layer also slides a little the way the coat lies, which combs it — straight-out shells look like moss. The body, the ruff, the trousers, the tail, the head and the ears each have their own hair length and direction. Phones skip it.
 
 Fixing this turned up an older bug: the hull builder that makes the dog was winding its triangles inside out, so every normal pointed into the body. It had been rendering by accident, because a two-sided material flips the normal on a back face and that happened to undo it. The winding is right now, which is also why the coat is lit properly for the first time.
@@ -204,7 +210,20 @@ Fixing this turned up an older bug: the hull builder that makes the dog was wind
 
 It has proper eyes. Each one is a brown eyeball set into the skull at the stop, just proud of the surface the way a real eye sits, with a dark pupil on the front, a white catchlight, and a dark almond lid rim around it slanted so the eye is not a circle. The nose has two nostrils in the same way. It costs 27 meshes and 4,900 triangles, and phones build a lighter version (23 meshes, 2,600 triangles).
 
-It trots to a spot just behind your shoulder, breaks into a run when you get ahead, walks around crates and walls the way you do, follows the ground up and down slopes, and catches up out of sight if a fall or a teleport leaves it far behind. Stand still for a couple of seconds and it sits down; move and it is up again. Its tail wags faster the closer it is to you, its head tracks the nearest soldier, and it barks — now and then on its own, and sharply when a soldier comes within nine metres.
+## How the dog moves
+
+A border collie does not amble. It works in bursts, and the dog now has a state for each of them:
+
+- **Trot** — the working gait, off your left shoulder and out of your line. Legs move in diagonal pairs.
+- **Run** — flat out when you get more than four metres ahead, up to about eight metres a second. The back legs slide toward the front pair as it opens up, which turns the trot into a gallop.
+- **Dart** — when whatever it is following cuts hard across it, it throws a turn at up to thirteen radians a second and banks into the corner. Half a second, then back to work.
+- **Creep** — a soldier out at nine metres: it stalks in low, working round the side rather than straight at it.
+- **Eye** — the thing collies are famous for. Body down, head level with the shoulders, stare locked, dead still. It holds it for about two seconds and then breaks, because a dog that crouches all match is a statue. Stand still yourself for a moment and it will give *you* the eye too, then shake it off and not do it again for a few seconds.
+- **Idle and sit** — weight shifts, ears tracking, then down on its haunches.
+
+Underneath, it accelerates at seventeen metres per second squared and stops nearly as hard, because that snap is most of what reads as a dog rather than a vehicle. Turning has real angular momentum rather than snapping to a heading, and the body banks, the legs lean and the head and tail roll with it. The centre of gravity drops as it speeds up and drops further on the crouch. Its ears prick forward at whatever it is watching.
+
+It walks around crates and walls the way you do, follows the ground up and down slopes, and catches up out of sight if a fall or a teleport leaves it far behind. Its tail wags faster the closer it is to you, streams out flat on the run and goes still on the eye. It barks now and then on its own, and sharply when a soldier comes within nine metres.
 
 **It cannot be killed.** It is not a target: nothing shoots at it, explosions do not touch it, and there is no health on it to lose. It does not fight either — it is company, not a weapon.
 
