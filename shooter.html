@@ -426,7 +426,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-15.0940</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-15.1530</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -7734,7 +7734,12 @@
   // Every part is one continuous smooth surface. A section can be deeper below the spine
   // than above it (ryT / ryB), which is what gives a dog its deep chest and flat back.
   // The coat markings are painted into the vertices, so nothing is stuck on as a separate lump.
-  const DOGC = { coat: 0x8a5a2e, dark: 0x241509, tan: 0xbd8445, white: 0xf7f3ea, nose: 0x1c1512 };
+  // A brown-and-white border collie is chocolate all over — one solid brown from
+  // light to deep, not a tan dog with a black saddle — with white in the Irish
+  // pattern: blaze, collar, chest, legs, tail tip. Brown dogs carry the brown
+  // through the nose, eye rims and pads (liver, never black) and have lighter,
+  // amber-toned eyes. White fur is never paper white: it is a warm off-white.
+  const DOGC = { coat: 0x553826, dark: 0x382418, tan: 0x6e4d36, white: 0xefeae0, nose: 0x5f3427, nostril: 0x2e1810, skin: 0xb98a76 };
   function sweepHull(sections, colorAt, seg = 16, capStart = true, capEnd = true) {
     const pos = [], col = [], uvs = [], idx = [], tmp = new THREE.Color(), V = THREE.Vector3;
     let carry = null, prevT = null;
@@ -7799,51 +7804,85 @@
   // colour is, which is exactly the signal we want.
   const FUR_SHEEN = sh => {
     sh.fragmentShader = sh.fragmentShader.replace("#include <roughnessmap_fragment>",
-      "#include <roughnessmap_fragment>\n\tfloat furLum = dot( vColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );\n\troughnessFactor *= mix( 0.56, 1.0, smoothstep( 0.0, 0.26, furLum ) );");
+      "#include <roughnessmap_fragment>\n\tfloat furLum = dot( vColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );\n\troughnessFactor = min( 1.0, roughnessFactor * mix( 0.92, 1.06, smoothstep( 0.0, 0.2, furLum ) ) );");
   };
-  const FUR_WHITE = (() => {
-    const c = document.createElement("canvas"); c.width = c.height = 1;
-    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, 1, 1);
-    const t = new THREE.CanvasTexture(c); t.encoding = THREE.LinearEncoding; return t;
-  })();
-  const FUR_SHELLS = COARSE ? 0 : 4, FUR_NOISE = (() => {
-    // one cell per hair, holding how long that hair is
-    const t = canvasTex(512, 512, (g, w, h) => {
-      const CELL = 6;
-      g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
-      for (let y = 0; y < h; y += CELL) for (let x = 0; x < w; x += CELL) {
-        const v = Math.round(30 + 225 * Math.pow(R(), .6));
+  // Two textures drawn from the same grid of hairs: one says how long each hair
+  // is (which shells it survives into), the other what shade it is. Real fur
+  // reads as fur because no two hairs are quite the same colour; a coat where
+  // they all match looks like felt, however well it is shaped.
+  const FUR_SHELLS = COARSE ? 0 : 7;
+  const [FUR_NOISE, FUR_TINT] = (() => {
+    const W = 512, CELL = 6, cells = [];
+    for (let y = 0; y < W; y += CELL) for (let x = 0; x < W; x += CELL)
+      cells.push([x + CELL * .5 + rnd(-.8, .8), y + CELL * .5 + rnd(-.8, .8), Math.pow(R(), .6), .66 + .34 * R()]);
+    const paint = (bg, pick) => canvasTex(W, W, g => {
+      g.fillStyle = bg; g.fillRect(0, 0, W, W);
+      for (const c of cells) {
+        const v = Math.round(pick(c) * 255);
         g.fillStyle = "rgb(" + v + "," + v + "," + v + ")";
-        g.beginPath();
-        g.arc(x + CELL * .5 + rnd(-.8, .8), y + CELL * .5 + rnd(-.8, .8), CELL * .34, 0, 6.284);
-        g.fill();
+        g.beginPath(); g.arc(c[0], c[1], CELL * .36, 0, 6.284); g.fill();
       }
     });
-    t.encoding = THREE.LinearEncoding;             // this is strand length, not colour
-    return t;
+    const len = paint("#000", c => .12 + .88 * c[2]);
+    len.encoding = THREE.LinearEncoding;              // strand length, not colour
+    const tint = paint("#b0b0b0", c => c[3]);
+    tint.encoding = THREE.LinearEncoding;             // a brightness factor, applied as-is
+    return [len, tint];
   })();
-  function furShell(src, len, rx, ry, root, lay) {
+  // One material per shell level, shared by every part of the coat: each part
+  // scales its own UVs to set its hair density, so they can all use one noise
+  // texture. (The repeat cannot live on the texture: three.js takes the UV
+  // transform from the first map it finds, which is how an earlier version of
+  // this coat ended up with one coarse density everywhere.)
+  const FUR_MATS = [];
+  function furMat(i) {
+    if (FUR_MATS[i]) return FUR_MATS[i];
+    const t = i / FUR_SHELLS;
+    const m = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: .95, metalness: 0, side: THREE.DoubleSide,
+      alphaMap: FUR_NOISE, map: FUR_TINT, alphaTest: .05 + t * .76
+    });
+    // darker at the roots, where little light gets into the coat, and a little
+    // warmer at the tips, where the sun bleaches it
+    const k = .3 + .7 * t;
+    m.color.setRGB(k * (1 + .05 * t), k, k * (1 - .07 * t));
+    m.onBeforeCompile = FUR_SHEEN;
+    return (FUR_MATS[i] = m);
+  }
+  // Grow a coat on one part of the dog. `len` gives the hair length at each point
+  // of the skin, from its position and normal and where it sits round (u) and
+  // along (w) the part, so a leg can carry feathering down the back and stay
+  // short-coated down the front. Each shell is baked here on the CPU: the skin
+  // pushed out along its normal, combed the way the coat lies, and long hair
+  // falling under its own weight.
+  function furShell(src, o) {
     if (!FUR_SHELLS || !src.geometry.attributes.uv) return;
-    const tex = FUR_NOISE.clone();
-    tex.needsUpdate = true; tex.repeat.set(rx, ry);
-    for (let i = 1; i <= FUR_SHELLS; i++) {
-      const t = i / FUR_SHELLS;
-      const m = new THREE.MeshStandardMaterial({
-        vertexColors: true, roughness: .97, metalness: 0, side: THREE.DoubleSide,
-        alphaMap: tex, alphaTest: .06 + t * .74
-      });
-      m.color.setScalar((root === undefined ? .5 : root) + (1 - (root === undefined ? .5 : root)) * t);
-      // Push the shell out along the surface normal. This uses the displacement
-      // map rather than a custom uniform on purpose: three.js caches a program by
-      // the text of onBeforeCompile, so thirty-odd shells sharing one function
-      // would share one uniform and all sit in the same place.
-      m.displacementMap = FUR_WHITE;
-      m.displacementScale = len * t;
-      m.onBeforeCompile = FUR_SHEEN;
-      const sh = new THREE.Mesh(src.geometry, m);
-      // Straight-out shells look like moss. Sliding each layer a little the way the
-      // coat lies combs the hairs, which is most of what sells fur in motion.
-      if (lay) sh.position.set(lay[0] * len * t, lay[1] * len * t, lay[2] * len * t);
+    const G = src.geometry, P = G.attributes.position, N = G.attributes.normal, UV = G.attributes.uv;
+    const uv = new Float32Array(UV.count * 2);
+    for (let i = 0; i < UV.count; i++) { uv[i * 2] = UV.getX(i) * o.rx; uv[i * 2 + 1] = UV.getY(i) * o.ry; }
+    const uvA = new THREE.BufferAttribute(uv, 2);
+    const lay = new THREE.Vector3(...(o.lay || [0, -.3, -1])).normalize();
+    const v = new THREE.Vector3(), n = new THREE.Vector3(), lens = new Float32Array(P.count);
+    for (let i = 0; i < P.count; i++) {
+      v.fromBufferAttribute(P, i); n.fromBufferAttribute(N, i);
+      lens[i] = Math.max(.002, o.len(v, n, UV.getX(i), UV.getY(i)));
+    }
+    const comb = o.comb === undefined ? .55 : o.comb, droop = o.droop === undefined ? .7 : o.droop;
+    for (let s = 1; s <= FUR_SHELLS; s++) {
+      const t = s / FUR_SHELLS, pos = new Float32Array(P.count * 3);
+      for (let i = 0; i < P.count; i++) {
+        v.fromBufferAttribute(P, i); n.fromBufferAttribute(N, i);
+        const L = lens[i], fall = Math.min(1, L / .05) * droop;
+        v.addScaledVector(n, L * t).addScaledVector(lay, L * t * comb);
+        v.y -= L * t * t * fall;
+        pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.setAttribute("normal", N); g.setAttribute("uv", uvA); g.setAttribute("color", G.attributes.color);
+      g.setIndex(G.index);
+      g.computeBoundingSphere();
+      const sh = new THREE.Mesh(g, furMat(s));
       sh.castShadow = false; sh.receiveShadow = false;
       src.add(sh);
     }
@@ -7851,12 +7890,14 @@
   function buildDog() {
     const g = new THREE.Group();
     const fur = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .93, metalness: 0, side: THREE.DoubleSide });
+    // under a coat, what shows between the hairs is the shadowed undercoat
+    if (FUR_SHELLS) fur.color.setScalar(.42);
     fur.onBeforeCompile = FUR_SHEEN;
     const furTwoSided = fur;
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0x120c07, roughness: .15, metalness: .2 });
     const shineMat = new THREE.MeshBasicMaterial({ color: 0xf6f2ea });
-    const irisMat = new THREE.MeshStandardMaterial({ color: 0x4a2a10, roughness: .3, metalness: 0 });
-    const lidMat = new THREE.MeshStandardMaterial({ color: 0x120b05, roughness: .9, metalness: 0 });
+    const irisMat = new THREE.MeshStandardMaterial({ color: 0x9c6526, roughness: .25, metalness: 0 });   // amber, as brown collies have
+    const lidMat = new THREE.MeshStandardMaterial({ color: 0x3a2116, roughness: .85, metalness: 0 });   // brown eye rims, not black
     const SEG = COARSE ? 12 : 22, LSEG = COARSE ? 8 : 14;
     const mesh = (geo, parent) => { const m = new THREE.Mesh(geo, fur); m.castShadow = !COARSE; (parent || g).add(m); return m; };
     const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), Math.max(0, Math.min(1, t)));
@@ -7873,53 +7914,58 @@
     // ---------- body: tail root, croup, loin tuck, deep ribcage, shoulder, arched neck ----------
     const bodyPaint = (v, h, w, t, sec) => {
       const z = v.z, xr = across(v, sec), yr = upDown(v, sec), k = wob(v);
-      let c = DOGC.coat;
-      // The saddle: it drapes over the back and down the ribs, stopping well short
-      // of the belly. This is the marking that says collie from fifty metres.
-      c = mix(c, DOGC.dark, sm(-.72 + k * 2, -.06 + k * 2, yr) * sm(-.4, -.31, z) * (1 - sm(.25, .35, z)));
-      c = mix(c, DOGC.tan, sm(-.1, -.62, yr) * .3 * sm(-.3, -.12, z) * (1 - sm(.0, .2, z)));   // warm flank below it
-      c = mix(c, DOGC.dark, sm(.34, .42, z) * sm(.2, .8, yr) * .9);                            // dark crest of the neck
-      // A full white collar all the way round, with a crisp edge front and back.
-      const collar = sm(.255 + k, .3 + k, z) * (1 - sm(.4 + k, .45 + k, z));
-      c = mix(c, DOGC.white, collar);
-      c = mix(c, DOGC.white, sm(.1, .19, z) * sm(-.42 + k * 3, -.68 + k * 3, yr) * (1 - sm(.5, .7, xr)));    // chest bib
-      c = mix(c, DOGC.white, sm(-.3 + k * 3, -.62 + k * 3, yr) * (1 - sm(.4, .72, xr)) * sm(-.2, -.04, z) * (1 - sm(.16, .26, z)));  // belly
-      return c;
+      // Solid chocolate, a shade deeper along the spine where the guard hair is
+      // thickest, and a shade warmer low on the sides where the sun bleaches it.
+      let c = mix(DOGC.coat, DOGC.dark, sm(.35, 1, yr) * .45);
+      c = mix(c, DOGC.tan, sm(-.1, -.6, yr) * .22);
+      // The collar: a white ring all the way round the neck, crisp at both edges.
+      const collar = sm(.262 + k, .3 + k, z);
+      // The chest: the collar pours down the front between the forelegs and runs
+      // back under the brisket as a narrowing strip.
+      const chest = sm(.06, .15, z) * sm(-.3 + k * 3, -.58 + k * 3, yr) * (1 - sm(.55, .78, xr));
+      const belly = sm(-.5 + k * 3, -.8 + k * 3, yr) * (1 - sm(.32, .6, xr)) * sm(-.16, -.04, z);
+      return mix(c, DOGC.white, most(collar, most(chest, belly)));
     };
     const body = new THREE.Group(); g.add(body);
     // A collie is a working dog: narrow side to side, deep from the withers down to
     // the elbow, and clearly cut up at the loin. The old sections were a barrel —
     // nearly as wide as they were deep, with no waist.
+    // Measured against the breed standards: the body is a little longer than the
+    // dog is tall (10:9), and the bottom of the chest comes down level with the
+    // elbow, not below it. The old model was 25% too long and hung its brisket
+    // well under the elbow, which made it read as heavy and short in the leg.
     const bodyMesh = mesh(sweepHull([
-      { c: [0, .474, -.40], rx: .062, ryT: .058, ryB: .062 },            // tail set, low on the croup
-      { c: [0, .478, -.33], rx: .108, ryT: .082, ryB: .118 },
-      { c: [0, .470, -.235], rx: .128, ryT: .094, ryB: .158, box: .2 },  // hindquarter: muscle, not fat
-      { c: [0, .458, -.135], rx: .108, ryT: .082, ryB: .132, box: .3 },
-      { c: [0, .452, -.045], rx: .094, ryT: .074, ryB: .108, box: .35 }, // the tuck-up, the waist of the dog
-      { c: [0, .448, .055], rx: .116, ryT: .09, ryB: .178, box: .45 },
-      { c: [0, .444, .16], rx: .126, ryT: .098, ryB: .236, box: .45 },   // brisket: deepest point, down at the elbow
-      { c: [0, .452, .255], rx: .126, ryT: .104, ryB: .216, box: .3 },
-      { c: [0, .482, .325], rx: .112, ryT: .098, ryB: .17 },
-      { c: [0, .538, .368], rx: .102, ryT: .088, ryB: .128 },            // base of the neck, thick with ruff
-      { c: [0, .592, .402], rx: .088, ryT: .076, ryB: .1 },
-      { c: [0, .638, .43], rx: .078, ryT: .068, ryB: .082 },
+      { c: [0, .474, -.36], rx: .058, ryT: .054, ryB: .058 },            // tail set, low on the croup
+      { c: [0, .48, -.298], rx: .102, ryT: .078, ryB: .11 },
+      { c: [0, .472, -.212], rx: .12, ryT: .09, ryB: .145, box: .2 },    // hindquarter: muscle, not fat
+      { c: [0, .462, -.122], rx: .102, ryT: .08, ryB: .118, box: .3 },
+      { c: [0, .456, -.04], rx: .09, ryT: .074, ryB: .098, box: .35 },   // the tuck-up, the waist of the dog
+      { c: [0, .454, .048], rx: .11, ryT: .088, ryB: .148, box: .45 },
+      { c: [0, .452, .14], rx: .118, ryT: .096, ryB: .174, box: .45 },   // brisket: level with the elbow
+      { c: [0, .458, .222], rx: .12, ryT: .1, ryB: .168, box: .3 },
+      { c: [0, .486, .282], rx: .106, ryT: .094, ryB: .142 },
+      { c: [0, .536, .322], rx: .094, ryT: .084, ryB: .112 },            // base of the neck
+      { c: [0, .592, .354], rx: .08, ryT: .072, ryB: .09 },
+      { c: [0, .645, .38], rx: .07, ryT: .064, ryB: .074 },              // a good length of neck, slightly arched
     ], bodyPaint, SEG), body);
 
     // ---------- head ----------
     const headPaint = (v, h, w, t, sec) => {
       const z = v.z, xr = across(v, sec), yr = upDown(v, sec), k = wob(v);
-      let c = mix(DOGC.coat, DOGC.dark, sm(.1, .8, yr) * .9 * (1 - sm(.0, .12, z)));          // dark skull and cheeks
-      c = mix(c, DOGC.dark, sm(.5, .1, xr) * sm(-.02, .05, z) * sm(-.2, .4, yr) * .5);         // shading round the eyes
-      // The blaze: a narrow stripe between the eyes that widens as it runs down
-      // the face, meeting the white that comes up from the chin and throat.
-      const bw = .28 + .36 * sm(-.02, .15, z);
-      const blaze = sm(bw + .1 + k, bw - .02 + k, xr) * sm(-.11, -.04, z);
-      const under = sm(-.34 + k * 3, -.62 + k * 3, yr);                                        // chin, throat, lower muzzle
-      c = mix(c, DOGC.white, most(blaze, under) * (1 - sm(.174, .2, z)));
-      c = mix(c, DOGC.nose, sm(.206, .224, z) * sm(-.9, -.2, yr) + sm(.221, .232, z));         // nose leather
+      // Brown over the skull, the ears and round the eyes; white for the blaze
+      // between the eyes and for the whole muzzle, chin and throat, running down
+      // into the collar. That split is the face of a brown-and-white collie.
+      let c = mix(DOGC.coat, DOGC.dark, sm(.3, 1, yr) * .3 * (1 - sm(.02, .12, z)));
+      const blaze = sm(.3 + k, .2 + k, xr) * sm(-.09, -.05, z);                               // narrow between the eyes
+      const muzzle = sm(.07 + k * .5, .11 + k * .5, z);                                       // the whole foreface
+      // the brown round each eye reaches a little way down the side of the muzzle
+      const eyePatch = sm(.14, .085, z) * sm(.45, .7, xr) * sm(-.15, .35, yr);
+      const under = sm(-.3 + k * 3, -.55 + k * 3, yr);                                        // chin and throat
+      c = mix(c, DOGC.white, most(most(blaze, muzzle * (1 - eyePatch)), under));
+      c = mix(c, DOGC.nose, sm(.19, .206, z) * sm(-.9, -.2, yr) + sm(.204, .214, z));         // liver nose leather
       return c;
     };
-    const head = new THREE.Group(); head.position.set(0, .652, .442); body.add(head);
+    const head = new THREE.Group(); head.position.set(0, .668, .404); head.scale.setScalar(.8); body.add(head);
     const headMesh = mesh(sweepHull([
       { c: [0, -.012, -.1], rx: .074, ryT: .068, ryB: .068 },
       { c: [0, .004, -.045], rx: .104, ryT: .1, ryB: .09 },
@@ -7928,21 +7974,21 @@
       // From here the foreface: about as long as the skull and deep through, so it
       // reads as a wedge in profile. Longer and finer than this and the dog turns
       // into a fox; shorter and it is a terrier.
-      { c: [0, -.012, .098], rx: .063, ryT: .048, ryB: .072, box: .25 },
-      { c: [0, -.016, .145], rx: .058, ryT: .044, ryB: .066, box: .3 },
-      { c: [0, -.02, .185], rx: .053, ryT: .042, ryB: .06, box: .3 },
-      { c: [0, -.023, .212], rx: .048, ryT: .04, ryB: .052, box: .25 },
-      { c: [0, -.025, .228], rx: .039, ryT: .036, ryB: .04 },    // the nose is a blunt block, not a point
-      { c: [0, -.026, .237], rx: .026, ryT: .025, ryB: .026 },
+      { c: [0, -.012, .095], rx: .064, ryT: .049, ryB: .073, box: .25 },
+      { c: [0, -.016, .136], rx: .059, ryT: .045, ryB: .067, box: .3 },
+      { c: [0, -.02, .171], rx: .054, ryT: .043, ryB: .061, box: .3 },
+      { c: [0, -.023, .195], rx: .049, ryT: .041, ryB: .053, box: .25 },
+      { c: [0, -.025, .21], rx: .04, ryT: .037, ryB: .041 },     // the nose is a blunt block, not a point
+      { c: [0, -.026, .219], rx: .027, ryT: .026, ryB: .027 },
     ], headPaint, SEG), head);
     // the lower jaw and cheeks, blended into the skull
     mesh(sweepHull([
       { c: [0, -.055, -.02], rx: .086, ryT: .052, ryB: .044 },
       { c: [0, -.058, .035], rx: .074, ryT: .046, ryB: .04 },
-      { c: [0, -.058, .09], rx: .056, ryT: .038, ryB: .034 },
-      { c: [0, -.057, .14], rx: .049, ryT: .032, ryB: .029 },
-      { c: [0, -.056, .185], rx: .042, ryT: .027, ryB: .024 },
-      { c: [0, -.055, .215], rx: .031, ryT: .02, ryB: .018 },
+      { c: [0, -.058, .088], rx: .057, ryT: .038, ryB: .034 },
+      { c: [0, -.057, .132], rx: .05, ryT: .032, ryB: .029 },
+      { c: [0, -.056, .171], rx: .043, ryT: .027, ryB: .024 },
+      { c: [0, -.055, .198], rx: .032, ryT: .02, ryB: .018 },
     ], headPaint, SEG), head);
     const ears = [];
     for (const sx of [-1, 1]) {
@@ -7964,60 +8010,65 @@
       }
       if (!COARSE) {   // the nostril, a dark crease in the nose leather
         const n = new THREE.Mesh(new THREE.SphereGeometry(.0062, 6, 5), eyeMat);
-        n.position.set(sx * .025, -.026, .2295); n.scale.set(.8, .7, .9); head.add(n);
+        n.position.set(sx * .025, -.026, .2115); n.scale.set(.8, .7, .9); head.add(n);
       }
       // The ear: a broad triangular blade carried upright with the top third tipped
       // forward, which is the shape a collie is known for. Dark and furry on the
       // back, bare and warm-toned inside.
-      const ear = new THREE.Group(); ear.position.set(sx * .058, .066, -.028); ear.rotation.set(-.04, sx * .3, sx * .17); head.add(ear);
+      const ear = new THREE.Group(); ear.position.set(sx * .06, .064, -.03); ear.rotation.set(-.1, sx * .42, sx * .24); head.add(ear);
       ears.push(ear);
       const earPaint = (v, h, w, t) => {
         // h is the sine of the way round the section: +1 is the back of the ear,
         // -1 the inside
-        let c = mix(DOGC.coat, DOGC.dark, sm(-.1, .85, h) * .85);
-        c = mix(c, 0xc49a7e, sm(.1, -.75, h) * .8 * (1 - sm(.55, .95, t)));   // bare inner skin
-        return mix(c, DOGC.white, sm(.6, 1, t) * .35);
+        let c = mix(DOGC.coat, DOGC.dark, sm(-.1, .85, h) * .5);
+        return mix(c, DOGC.skin, sm(.1, -.75, h) * .75 * (1 - sm(.55, .95, t)));   // bare inner skin
       };
       const earMesh = mesh(sweepHull([
-        { c: [0, -.014, .006], rx: .064, ryT: .017, ryB: .017 },
-        { c: [0, .026, .003], rx: .06, ryT: .016, ryB: .016 },
-        { c: [0, .064, 0], rx: .049, ryT: .014, ryB: .014 },
-        { c: [0, .09, -.003], rx: .038, ryT: .012, ryB: .012 },
+        // ear leather is thin: the old ears were three centimetres thick and read
+        // as horns whenever you saw them edge on
+        { c: [0, -.014, .004], rx: .064, ryT: .01, ryB: .012 },
+        { c: [0, .026, .002], rx: .06, ryT: .008, ryB: .01 },
+        { c: [0, .064, 0], rx: .048, ryT: .007, ryB: .008 },
+        { c: [0, .09, -.002], rx: .037, ryT: .006, ryB: .007 },
       ], earPaint, LSEG), ear);
-      const tip = new THREE.Group(); tip.position.set(0, .09, -.003); tip.rotation.x = -.72; ear.add(tip);
+      const tip = new THREE.Group(); tip.position.set(0, .09, -.002); tip.rotation.x = -.95; ear.add(tip);
       const tipMesh = mesh(sweepHull([
-        { c: [0, 0, 0], rx: .038, ryT: .012, ryB: .012 },
-        { c: [0, .028, 0], rx: .027, ryT: .01, ryB: .01 },
-        { c: [0, .048, 0], rx: .011, ryT: .006, ryB: .006 },
+        { c: [0, 0, 0], rx: .037, ryT: .006, ryB: .007 },
+        { c: [0, .028, 0], rx: .026, ryT: .005, ryB: .006 },
+        { c: [0, .048, 0], rx: .01, ryT: .004, ryB: .004 },
       ], earPaint, LSEG), tip);
-      furShell(earMesh, .007, 5, 4, .55);
-      furShell(tipMesh, .005, 4, 3, .55);
+      // short on the ear itself, with a soft fringe along the edges
+      furShell(earMesh, { rx: .9, ry: .7, lay: [0, .2, -1], comb: .3, len: (v, n) => .007 + Math.abs(v.x) * .12 });
     }
 
     // the ruff: the collar of long coat a collie carries round its neck and chest
     const ruffMesh = mesh(sweepHull([
-      { c: [0, .486, .24], rx: .14, ryT: .112, ryB: .2 },
-      { c: [0, .5, .292], rx: .148, ryT: .118, ryB: .178, fuzz: .14 },
-      { c: [0, .52, .338], rx: .152, ryT: .124, ryB: .158, fuzz: .22 },    // the mane stands out past the neck
-      { c: [0, .548, .378], rx: .142, ryT: .118, ryB: .136, fuzz: .24 },
-      { c: [0, .578, .406], rx: .116, ryT: .1, ryB: .112, fuzz: .18 },
-      { c: [0, .604, .424], rx: .094, ryT: .08, ryB: .09, fuzz: .08 },
+      { c: [0, .49, .216], rx: .128, ryT: .104, ryB: .162 },
+      { c: [0, .502, .262], rx: .136, ryT: .11, ryB: .152, fuzz: .12 },
+      { c: [0, .52, .302], rx: .138, ryT: .114, ryB: .136, fuzz: .18 },    // the mane stands out past the neck
+      { c: [0, .548, .338], rx: .128, ryT: .108, ryB: .118, fuzz: .2 },
+      { c: [0, .58, .362], rx: .104, ryT: .09, ryB: .098, fuzz: .14 },
+      { c: [0, .608, .378], rx: .084, ryT: .074, ryB: .08, fuzz: .06 },
     ], (v, h, w, t, sec) => {
-      const yr = (v.y - sec.c[1]) / ((v.y >= sec.c[1] ? (sec.ryT || sec.rx) : (sec.ryB || sec.rx)) || 1);
-      // The ruff is the white collar where it is longest: white round the front and
-      // underside, dark over the crest, with a crisp line between.
-      const k = wob(v);
-      return mix(mix(DOGC.coat, DOGC.dark, sm(.0, .8, yr) * .92), DOGC.white, sm(-.12 + k * 3, -.42 + k * 3, yr));
+      // The ruff carries the white collar where the coat is longest: white all the
+      // way round the neck, and down the front into the chest; the brown of the
+      // body only reaches into it from behind, over the withers.
+      const z = v.z, yr = upDown(v, sec), k = wob(v);
+      const white = most(sm(.262 + k, .3 + k, z), sm(-.05 + k * 3, -.35 + k * 3, yr));
+      return mix(mix(DOGC.coat, DOGC.dark, sm(.35, 1, yr) * .45), DOGC.white, white);
     }, SEG, false, false), body);
     ruffMesh.material = furTwoSided;
 
     // ---------- legs: shoulder to elbow, then elbow through pastern to paw ----------
-    const coatPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.tan, sm(.3, 1, t) * .35);
-    const pawPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.white, sm(.62, .76, t));
-    const legs = [], legFur = [], legFur2 = [];
+    const coatPaint = (v, h, w, t) => mix(DOGC.coat, DOGC.tan, sm(.3, 1, t) * .25);
+    // Irish markings: the forelegs are white from about halfway down the forearm,
+    // the hind legs from the hock down, each with a crisp but uneven top edge.
+    const frontPaw = (v, h, w, t) => mix(mix(DOGC.coat, DOGC.tan, .2), DOGC.white, sm(.22 + wob(v) * 3, .3 + wob(v) * 3, t));
+    const backPaw = (v, h, w, t) => mix(mix(DOGC.coat, DOGC.tan, .2), DOGC.white, sm(.4 + wob(v) * 3, .48 + wob(v) * 3, t));
+    const legs = [], legFurAll = [];
     for (const sx of [-1, 1]) for (const sz of [1, -1]) {
       const front = sz > 0;
-      const hip = new THREE.Group(); hip.position.set(sx * (front ? .092 : .1), front ? .4 : .41, front ? .22 : -.2); g.add(hip);
+      const hip = new THREE.Group(); hip.position.set(sx * (front ? .088 : .094), front ? .4 : .41, front ? .19 : -.18); g.add(hip);
       const hipMesh = mesh(sweepHull(front ? [
         { c: [0, .055, .012], rx: .08, ryT: .09, ryB: .09 },       // shoulder, buried in the body
         { c: [0, -.01, .006], rx: .058, ryT: .066, ryB: .066 },
@@ -8029,7 +8080,7 @@
         { c: [0, -.07, .014], rx: .068, ryT: .08, ryB: .092, fuzz: .06 },
         { c: [0, -.125, .022], rx: .04, ryT: .047, ryB: .047 },      // stifle
       ], coatPaint, LSEG), hip);
-      legFur.push(hipMesh);
+      legFurAll.push({ mesh: hipMesh, front, upper: true });
       const knee = new THREE.Group(); knee.position.y = front ? -.115 : -.125; hip.add(knee);
       const kneeMesh = mesh(sweepHull(front ? [
         { c: [0, .01, -.004], rx: .04, ryT: .044, ryB: .044 },
@@ -8050,8 +8101,8 @@
         { c: [0, -.282, .054], rx: .032, ryT: .017, ryB: .016 },
         { c: [0, -.286, .076], rx: .024, ryT: .012, ryB: .012 },
         { c: [0, -.288, .089], rx: .012, ryT: .008, ryB: .008 },
-      ], pawPaint, LSEG), knee);
-      legFur2.push(kneeMesh);
+      ], front ? frontPaw : backPaw, LSEG), knee);
+      legFurAll.push({ mesh: kneeMesh, front, upper: false });
       legs.push({ hip, knee, back: !front, phase: (sx > 0 ? 0 : Math.PI) + (front ? 0 : Math.PI) });
     }
 
@@ -8059,30 +8110,55 @@
     // The tail is set on low and reaches past the hock, carried down in a long
     // curve with the tip swinging back up — the swirl a collie shows at rest. It is
     // heavily furnished, so the sections carry a lot of fuzz for the fur to grow on.
-    const tail = new THREE.Group(); tail.position.set(0, .446, -.405); g.add(tail);
+    // Set on low, hanging to just past the hock, with the last third swinging back
+    // and up — the swirl the standards ask for. The old tail was long enough to
+    // reach seven centimetres into the ground.
+    const tail = new THREE.Group(); tail.position.set(0, .452, -.364); g.add(tail);
     const tailMesh = mesh(sweepHull([
-      { c: [0, .012, .022], rx: .05, ryT: .048, ryB: .048 },
-      { c: [0, -.022, -.058], rx: .066, ryT: .066, ryB: .066, fuzz: .12 },
-      { c: [0, -.082, -.132], rx: .068, ryT: .07, ryB: .068, fuzz: .2 },
-      { c: [0, -.155, -.196], rx: .062, ryT: .066, ryB: .062, fuzz: .22 },
-      { c: [0, -.236, -.244], rx: .053, ryT: .058, ryB: .053, fuzz: .22 },
-      { c: [0, -.318, -.273], rx: .043, ryT: .048, ryB: .043, fuzz: .2 },
-      { c: [0, -.396, -.279], rx: .033, ryT: .037, ryB: .033, fuzz: .16 },   // the tip starts to swing up
-      { c: [0, -.462, -.258], rx: .023, ryT: .026, ryB: .023, fuzz: .1 },
-      { c: [0, -.505, -.222], rx: .012, ryT: .013, ryB: .012 },
-    ], (v, h, w, t) => mix(mix(DOGC.coat, DOGC.dark, sm(.1, .7, h) * .5), DOGC.white, sm(.74, .93, t)), LSEG), tail);
+      { c: [0, .01, .018], rx: .045, ryT: .044, ryB: .044 },
+      { c: [0, -.022, -.05], rx: .056, ryT: .056, ryB: .058, fuzz: .1 },
+      { c: [0, -.075, -.108], rx: .058, ryT: .058, ryB: .062, fuzz: .16 },
+      { c: [0, -.142, -.15], rx: .054, ryT: .054, ryB: .058, fuzz: .2 },
+      { c: [0, -.212, -.172], rx: .048, ryT: .048, ryB: .052, fuzz: .2 },
+      { c: [0, -.268, -.188], rx: .041, ryT: .042, ryB: .045, fuzz: .18 },   // reaches the hock
+      { c: [0, -.304, -.214], rx: .033, ryT: .034, ryB: .036, fuzz: .14 },   // and swings back and up
+      { c: [0, -.316, -.25], rx: .024, ryT: .025, ryB: .026, fuzz: .1 },
+      { c: [0, -.31, -.284], rx: .012, ryT: .013, ryB: .013 },
+    ], (v, h, w, t) => mix(mix(DOGC.coat, DOGC.dark, sm(.1, .7, h) * .3), DOGC.white, sm(.78 + wob(v) * 2, .86 + wob(v) * 2, t)), LSEG), tail);
 
     // ---------- grow the coat ----------
     // Short fuzz everywhere breaks the silhouette; the ruff, the trousers and the
     // tail carry the long coat a collie is known for. Phones skip it.
-    furShell(bodyMesh, .024, 11, 7, .42, [0, -.35, -.5]);
-    furShell(ruffMesh, .05, 10, 3.6, .34, [0, -.75, -.2]);
-    furShell(tailMesh, .042, 7, 6, .4, [0, -.55, -.5]);
-    for (const hm of legFur) furShell(hm, .019, 5.5, 3, .45, [0, -.8, -.2]);
-    for (const km of legFur2) furShell(km, .009, 5, 7, .5, [0, -.7, 0]);
-    furShell(headMesh, .0085, 8, 7, .55, [0, -.2, -.6]);
+    // ---------- the coat ----------
+    // A rough-coated collie is short on the face and down the front of the legs,
+    // and long where it matters: the mane round the neck, feathering down the back
+    // of the forelegs, the britches on the thighs, a fringe under the belly, and a
+    // plume under the tail. Getting that pattern right is what makes the dog read
+    // as a collie rather than a short-haired dog with a scarf.
+    const down = n => Math.max(0, -n.y), back = n => Math.max(0, -n.z);
+    furShell(bodyMesh, { rx: 2.6, ry: 2.6, lay: [0, -.35, -1], len: (v, n) =>
+      .026 + .035 * down(n) * (1 - Math.abs(n.x) * .5)         // belly fringe
+      + .026 * Math.max(0, n.z) * down(n) * 1.5                 // brisket, running into the mane
+      - .004 * Math.max(0, n.y) });                              // flatter along the back
+    furShell(ruffMesh, { rx: 2.6, ry: 1.1, lay: [0, -1, -.25], comb: .45, len: (v, n) =>
+      .05 + .02 * down(n) + .012 * Math.max(0, n.z) - .012 * Math.max(0, n.y) });
+    // On a hanging tail the feathering grows off the back and the underside, the
+    // side facing away from the legs, and is fullest through the middle third.
+    const plume = new THREE.Vector3(0, -.55, -.84).normalize();
+    furShell(tailMesh, { rx: 1.2, ry: 1.8, lay: [0, -.7, -.5], droop: .9, len: (v, n, u, w) => {
+      const f = n.dot(plume);
+      return (.026 + .075 * Math.max(0, f) + .024 * (1 - Math.abs(f))) * (.5 + .5 * Math.sin(Math.min(1, w * 1.15) * 3.1416));
+    } });
+    furShell(headMesh, { rx: 2.2, ry: 1.3, lay: [0, -.15, -1], comb: .4, len: (v, n) =>
+      v.z > .1 ? .004 : .007 + .006 * Math.max(0, -v.z * 8) });   // smooth on the muzzle, a little longer behind the ears
+    for (const L of legFurAll) {
+      if (L.upper) furShell(L.mesh, { rx: 1.1, ry: .8, lay: [0, -1, -.2], len: (v, n) =>
+        L.front ? .012 + .03 * back(n) : .02 + .05 * back(n) + .01 * Math.abs(n.x) });   // forearm feathering; britches
+      else furShell(L.mesh, { rx: .8, ry: 1.2, lay: [0, -1, -.1], len: (v, n, u, w) =>
+        w > .72 ? .006 : L.front ? (.011 + .032 * back(n) * (1 - w / .72)) : (.01 + .016 * back(n) * (1 - w / .55)) });
+    }
 
-    g.scale.setScalar(1.04);
+    g.scale.setScalar(.98);
     return { g, body, head, tail, legs, ears };
   }
   function removeDog() { if (dog) scene.remove(dog.m.g); dog = null; }
