@@ -426,7 +426,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-16.2105</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-10-16.2150</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -7739,7 +7739,7 @@
   // pattern: blaze, collar, chest, legs, tail tip. Brown dogs carry the brown
   // through the nose, eye rims and pads (liver, never black) and have lighter,
   // amber-toned eyes. White fur is never paper white: it is a warm off-white.
-  const DOGC = { coat: 0x553826, dark: 0x382418, tan: 0x6e4d36, white: 0xefeae0, nose: 0x5f3427, nostril: 0x2e1810, skin: 0xb98a76 };
+  const DOGC = { coat: 0x553826, dark: 0x382418, tan: 0x6e4d36, white: 0xefeae0, nose: 0x161210, nostril: 0x050404, skin: 0xb98a76 };
   function sweepHull(sections, colorAt, seg = 16, capStart = true, capEnd = true) {
     const pos = [], col = [], uvs = [], idx = [], tmp = new THREE.Color(), V = THREE.Vector3;
     let carry = null, prevT = null;
@@ -8084,7 +8084,7 @@
       // liver nose, and the lip line along the mouth
       if (inHead > 0) {
         const nd = Math.hypot(hx / .016, (hy + .011) / .0125, (hz - .081) / .0115);
-        c.lerp(cNose, sm(1.25, .95, nd) * sm(.07, .078, hz));
+        c.lerp(cNose, sm(1.52, 1.36, nd) * sm(.066, .074, hz));   // the leather, out to where the nose blends into the muzzle
         c.lerp(cNose, sm(.004, .0, Math.abs(hy + .035 - hz * .05)) * sm(.0, .02, hz) * sm(.09, .075, hz) * sm(.012, .02, hx) * .75);
       }
       if (y < .006) c.lerp(cPad, sm(.006, .002, y));                       // pads
@@ -8109,6 +8109,7 @@
         ly = -1; lz = -.3;
       }
       if (y < .035) L = Math.min(L, .004);                                  // feet stay neat
+      if (inHead > 0 && hz > .066 && Math.hypot(hx / .016, (hy + .011) / .0125, (hz - .081) / .0115) < 1.55) L = .0004;   // bare nose leather
       hairLen[i] = L;
       const ll = Math.hypot(lx, ly, lz) || 1;
       lay[i * 3] = lx / ll; lay[i * 3 + 1] = ly / ll; lay[i * 3 + 2] = lz / ll;
@@ -8151,7 +8152,7 @@
     const lidMat = new THREE.MeshStandardMaterial({ color: 0x2c180f, roughness: .85, metalness: 0 });
     const pupilMat = new THREE.MeshStandardMaterial({ color: 0x0c0806, roughness: .15, metalness: .2 });
     const shineMat = new THREE.MeshBasicMaterial({ color: 0xf6f2ea });
-    const noseMat = new THREE.MeshStandardMaterial({ color: 0x2e1810, roughness: .45, metalness: 0 });
+    const noseMat = new THREE.MeshStandardMaterial({ color: 0x050404, roughness: .45, metalness: 0 });
     const ears = [];
     for (const sx of [-1, 1]) {
       // an eye set in its socket under the brow, looking forward and a little out
