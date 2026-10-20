@@ -255,6 +255,14 @@ Every blast now sets the ground alight: a scorched patch with flames licking ove
 
 A blast high in the air lights nothing, since there is no ground under it to burn. Fires are capped (14 at a time, 7 on phones) so a heavy firefight cannot bury the frame rate, and they share a single light rather than one each.
 
+**How the fire looks.** The flames used to be rigid orange cones. Now each fire is a cluster of soft tongues drawn by a shader: scrolling noise bends, splits and narrows each one, so the flames lick upward, sway, flare and flicker instead of standing still. Their colour follows how fire actually glows, from deep red at the edges and tips through orange to a pale yellow core, and the core is bright enough for the bloom to catch. The flames also partly hide what is behind them, so they read as fire in daylight instead of a faint orange tint. Under them the ground is blackened and crazed with thin cracks of glowing embers that pulse. Sparks rise off the fire and drift and twinkle as they climb. The smoke is dark and sooty and spreads as it rises. The firelight flickers on several rhythms at once, so it never settles into a steady beat. When the fire dies the flames shrink and the bed cools before it goes out.
+
+The blast itself got the same treatment: the fireball is a churning ball of noise that burns white at the centre and cools to a sooty red rim as it swells. Burning soldiers now have real flames clinging to them instead of orange puffs, with a trail of smoke.
+
+All of the flame, spark and ember-bed movement runs on the graphics card, so a fire costs three draw calls and almost no per-frame work.
+
+Fixed along the way: the **Laser Fence** did no damage, because a helper with the same name, added for the dog's skeleton, replaced the one the fence used. Each now has its own name, and the fence burns again.
+
 ## Why online play said there was no internet
 
 On the published site, hosting a game used to burn through the public code relay's allowance in about a minute: the host posted three seat offers, then polled three separate topics every two seconds, roughly ninety requests a minute from one address. ntfy.sh rate limits anonymous traffic, so it started answering 429 and every call after that failed with "check your internet". On the claude.ai copy this never showed, because that copy signals through its own database first and only falls back to the relay.
