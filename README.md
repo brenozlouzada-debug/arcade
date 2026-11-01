@@ -14,7 +14,7 @@ A first-person shooter that runs in the browser, written with three.js.
 
 The host picks a mode before pressing Start: **Deathmatch** (free for all, the original) or **Co-op: fight the enemies together**, where everyone is on the same team against waves of soldiers. In co-op the host runs the enemies and everyone sees and shoots the same ones; enemy bullets hurt everyone, there is no friendly fire, and each player scores the kills they make. Waves get bigger with more players.
 
-Up to 4 players, free-for-all arena (shoot, build, loot chests; most eliminations wins). It uses peer-to-peer WebRTC, so there is no server and no account. You swap two short codes in any chat app:
+Up to 4 players, free-for-all on the full 220 m field (shoot, build, loot chests; most eliminations wins). It uses peer-to-peer WebRTC, so there is no server and no account. You swap two short codes in any chat app:
 
 1. **Host:** click **Play Online**, then **Create game code**. A number code (8 digits) appears. Tell it to your friends.
 2. **Friend:** click **Play Online**, type the host's code under **Join** and press **Join**. They are in. (The old copy and paste codes are still there under "use copy and paste codes instead".) The number codes pass through the shared database on the published page and a public relay (ntfy.sh), so you need an internet connection.
@@ -257,11 +257,77 @@ A blast high in the air lights nothing, since there is no ground under it to bur
 
 **How the fire looks.** The flames used to be rigid orange cones. Now each fire is a cluster of soft tongues drawn by a shader: scrolling noise bends, splits and narrows each one, so the flames lick upward, sway, flare and flicker instead of standing still. Their colour follows how fire actually glows, from deep red at the edges and tips through orange to a pale yellow core, and the core is bright enough for the bloom to catch. The flames also partly hide what is behind them, so they read as fire in daylight instead of a faint orange tint. Under them the ground is blackened and crazed with thin cracks of glowing embers that pulse. Sparks rise off the fire and drift and twinkle as they climb. The smoke is dark and sooty and spreads as it rises. The firelight flickers on several rhythms at once, so it never settles into a steady beat. When the fire dies the flames shrink and the bed cools before it goes out.
 
-The blast itself got the same treatment: the fireball is a churning ball of noise that burns white at the centre and cools to a sooty red rim as it swells. Burning soldiers now have real flames clinging to them instead of orange puffs, with a trail of smoke.
+Burning soldiers now have real flames clinging to them instead of orange puffs, with a trail of smoke.
 
 All of the flame, spark and ember-bed movement runs on the graphics card, so a fire costs three draw calls and almost no per-frame work.
 
 Fixed along the way: the **Laser Fence** did no damage, because a helper with the same name, added for the dog's skeleton, replaced the one the fence used. Each now has its own name, and the fence burns again.
+
+## Explosions
+
+Explosions were a white sprite, a flat orange ball and a hard ring on the ground. Now a blast plays out the way a real one does on film, over about three seconds:
+
+- **The flash.** A white-hot burst lasts a split second and lights everything around it. The light flares hard, shifts from white-yellow to orange, and dies away with a flicker.
+- **The fireball.** It isn't one ball but a cluster of lobes that boil out from the centre. The upper lobes rise faster, so the cloud climbs and rolls. They're shaded with churning 3D noise: hot yellow inside, orange-red at the edges.
+- **Fire into smoke.** Each lobe cools from the outside in. The fire breaks up into glowing pockets and then into heavy, sooty smoke with ragged billowing edges. The smoke is lit orange from underneath while the fire lasts, then rises and thins away. It takes its colour from the sky above it: grey by day, dim blue-black under moonlight.
+- **Sparks** streak outward and arc down under gravity, hottest at their heads.
+- **The shockwave.** A faint bright shell races out in the first instant. On the ground, a ragged ring of dust is thrown outward and settles.
+- **Aftermath:** debris flies, a scorch mark is left on the ground at its real height, and the ground keeps burning.
+
+The fireball, sparks, shockwave and dust are all shaders, so a blast is only a few draw calls. When several go off at once, as with a cluster bomb or a missile barrage, each one is built with fewer lobes so the frame rate holds. Phones also get fewer lobes and sparks.
+
+## A much bigger field, with a coast
+
+The playing field is now 220 m across instead of 80, nearly eight times the area. It's filled to match: about four times the crates, containers, barrels, trees and scenery on a computer (two and a half times on a phone), and far more grass and flowers. The distant mountains and forest ring have moved out with it. Hostiles now arrive 28 to 46 m from wherever you are, so a fight never starts on the far side of the map. There are twelve chests instead of six, more medkits and ammo boxes, and online spawn points are spread across the bigger field. Shadows now follow you in a box around where you stand, so they stay sharp however far you roam.
+
+## The sea
+
+Every map except the Moon has a coast along its north side: grass gives way to a sand beach, then shallows, then a seabed that drops away to deep water. Beyond the line of red buoys the sea runs out to the horizon. The water is drawn by a shader rather than a texture:
+
+- **Colour follows depth.** It's clear green-blue over the sand and darkens to deep blue further out. You can see swimmers' legs and the seabed through the shallows; deep water is opaque.
+- **The surface moves.** Travelling waves make a swell that flattens in the shallows, with fine ripples close up.
+- **It reflects the real sky** of each map and catches the sun in a glittering path.
+- **Surf breaks** in a moving white line along the beach.
+
+Each map tints its own water: dark and still at night, green under Ashfall's ash, pink on Sugar Rush, turquoise at Palm Beach and the Coral Reef.
+
+**Swimming.** Walk into water and you wade, slowed. Once it's too deep to stand you swim, with your head just above the surface, bobbing on the swell, at about half speed, with stroke sounds and splashes. You can't jump in water, and you climb out by swimming back to the beach. Soldiers swim too: they tread water with their head and shoulders up, kicking under the surface, with a ring of ripples around them. When you're near the coast, about a third of each wave comes out of the sea and has to swim ashore under your fire. Your dog paddles along with its head out.
+
+Bullets that hit the sea throw up a splash. An explosion on the water raises a column of spray instead of a scorch mark, and nothing burns on water.
+
+## Warships
+
+In survival, two destroyers patrol the bay (one on a phone):
+
+- **The ship itself** has a lofted hull with a raked bow, a black stripe along the waterline, a pennant number on the bow, a bridge with windows, a funnel trailing smoke, a tripod mast with a sweeping radar, lifeboats, railings and an ensign. A foaming wake spreads behind it.
+- **It shoots at you.** Each ship carries two twin-gun turrets that train round onto you and lob shells at you from up to 120 m, leading you a little. Each shot comes with a muzzle flash, a cloud of smoke and a boom. The shells come down in an arc and explode.
+- **It sends soldiers ashore.** Every so often a few soldiers jump over the side and swim for the beach.
+- **You can sink it.** It takes a lot of damage from bullets and much more from rockets and grenades, starts burning at half health, and when it goes, a chain of explosions runs down the hull before it settles by the stern and slips under. Sinking one is worth 150 points. Another steams in from the horizon about 45 seconds later.
+
+Ships show up on the minimap and you can't swim through them.
+
+## Bosses
+
+Every fifth wave is a boss wave: a boss leads it in with half the usual escort, a horn sounds, and the boss's name and health bar appear across the top of the screen.
+
+- **The Juggernaut** (waves 5, 15, 25…) is twice a man's height in black armour, with a glowing red visor. It carries a minigun whose barrels spin as it fires. Every few seconds it looses a four-rocket salvo from the pods on its shoulders, and if you get close it stamps the ground, a shockwave that hurts and throws you back.
+- **The Warlord** (waves 10, 20…) wears a crested helmet, gold-trimmed pauldrons and a long red cape, and fires a three-round battle rifle. It leaps across the field, landing in a shockwave next to you, and keeps calling in squads of three soldiers.
+
+From wave 15 on, both come together. Bosses get tougher with every wave. Killing one is worth 200 points, sets off a huge blast, and leaves a **legendary chest**, a medkit and ammo where it fell. The Juggernaut also drops its minigun for you to pick up.
+
+## Soldiers, rebuilt again
+
+The soldiers have a new look:
+
+- **Uniforms are printed camouflage**, woodland for riflemen, desert for scouts and dark urban for heavies, each with its own randomly drawn pattern.
+- **The body** is one rounded, turned shape (hips, waist, ribcage, shoulders) instead of stacked cylinders.
+- **The kit:** a moulded plate carrier with MOLLE webbing, three magazine pouches with flaps, an admin pouch and a radio with a whip antenna. On the back is a pack with a bedroll, and a drinking tube runs over the shoulder.
+- **Every soldier has a face:** eyes, brows, a nose, a mouth, ears and a stubbled jaw.
+- **Headgear by type.** Riflemen wear a covered ballistic helmet with a night-vision mount, side rails and goggles pushed up. Scouts wear a boonie hat and shades. Heavies wear a full ballistic face mask.
+- **Red marks a hostile.** A red band round the helmet or hat, and a red armband, mark every enemy at a glance.
+- **Limbs and boots** have cargo pockets, knee pads, rolled cuffs, gloves with fingers, and boots with real soles.
+
+This also fixed an old colour bug. The tint that gives each soldier a slightly different uniform was lightening every colour by one gamma step, which is why the old uniforms looked pastel pink and yellow. Online players' models get the new build in their team colours.
 
 ## Why online play said there was no internet
 
