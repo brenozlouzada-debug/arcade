@@ -430,7 +430,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-01.1900</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-02.1000</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -447,7 +447,7 @@
 (() => {
   const ARENA = 110;                       // half the width of the playing field, in metres
   // how much more of everything a map gets than it did when the field was 80 m across
-  const PK = n => Math.round(n * (matchMedia("(pointer: coarse)").matches ? 2.6 : 4));
+  const PK = n => Math.round(n * (matchMedia("(pointer: coarse)").matches ? 2 : 3.4));
   const scene = new THREE.Scene();
   const COARSE = matchMedia("(pointer: coarse)").matches;
   const FOG_COL = 0xcfe0ee;
@@ -535,6 +535,89 @@
     const y = dirDown.clone().negate(), x = side.clone(), z = new THREE.Vector3().crossVectors(x, y);
     return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
   };
+
+  // ---- fewer draw calls ----
+  // Every separate mesh is a separate draw call, and the bigger field made that the
+  // main cost of a frame. Parts that never move relative to each other are merged
+  // into one mesh per material: a whole map's props, each limb segment of a soldier,
+  // a ship's hull fittings, a chest. The originals stay in place but hidden, so
+  // anything that aims a ray at them still hits.
+  function mergeGeos(list) {
+    const tint = list.every(l => l[2]);                  // a colour per part, baked into the vertices
+    const want = ["position", "normal", "uv", "color"].filter(a => a === "color" ? !tint && list.every(([g]) => g.attributes.color) : list.every(([g]) => g.attributes[a]));
+    if (!want.includes("position") || !want.includes("normal")) return null;
+    let n = 0;
+    const parts = list.map(([g, m]) => { const q = g.index ? g.toNonIndexed() : g.clone(); q.applyMatrix4(m); n += q.attributes.position.count; return q; });
+    const out = new THREE.BufferGeometry();
+    for (const a of want) {
+      const size = parts[0].attributes[a].itemSize, arr = new Float32Array(n * size);
+      let o = 0; for (const q of parts) { arr.set(q.attributes[a].array, o); o += q.attributes[a].array.length; }
+      out.setAttribute(a, new THREE.BufferAttribute(arr, size));
+    }
+    if (tint) {
+      const arr = new Float32Array(n * 3); let o = 0;
+      parts.forEach((q, i) => { const c = list[i][2]; for (let k = 0; k < q.attributes.position.count; k++, o += 3) { arr[o] = c.r; arr[o + 1] = c.g; arr[o + 2] = c.b; } });
+      out.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+    }
+    parts.forEach(q => q.dispose());
+    out.computeBoundingSphere();
+    return out;
+  }
+  // a soldier's rigid piece in as few draw calls as possible: every plain-coloured
+  // part shares one vertex-coloured material, and each printed texture (camouflage,
+  // webbing) gets one more. Glowing parts keep their own material.
+  function mergeRig(group, pool, mats, skip) {
+    group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(group.matrixWorld).invert(), bins = new Map();
+    const visit = o => o.children.forEach(c => {
+      if (!c.visible || skip.includes(c)) return;
+      if (c.isMesh && mergeable(c) && !(c.material.emissiveIntensity > .3 && c.material.emissive && c.material.emissive.getHex() !== 0) && !c.geometry.attributes.color) {
+        const m = c.material, k = m.map ? "map" + m.map.uuid + (m.side === THREE.DoubleSide ? "d" : "") : "plain" + (m.side === THREE.DoubleSide ? "d" : "");
+        (bins.get(k) || bins.set(k, []).get(k)).push(c);
+      }
+      if (!c.isMesh || mergeableTree(c)) visit(c);
+    });
+    visit(group);
+    bins.forEach((list, k) => {
+      if (list.length < 2 && !pool[k]) return;
+      const geo = mergeGeos(list.map(c => [c.geometry, new THREE.Matrix4().multiplyMatrices(inv, c.matrixWorld), c.material.color]).filter(l => l[0].attributes.uv || !k.startsWith("map")));
+      if (!geo) return;
+      if (!pool[k]) {
+        const f = list[0].material;
+        const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: f.map || null, normalMap: f.normalMap || null, roughness: f.map ? f.roughness : .74, metalness: f.map ? f.metalness : .14, side: f.side, emissive: 0x000000 });
+        if (f.normalScale) mat.normalScale.copy(f.normalScale);
+        pool[k] = mat; mats.push(mat);
+      }
+      const m = new THREE.Mesh(geo, pool[k]);
+      m.castShadow = list.some(c => c.castShadow); m.receiveShadow = true; m.userData.merged = true;
+      group.add(m);
+      list.forEach(c => { c.visible = false; });
+    });
+  }
+  const mergeable = c => c.isMesh && !c.isInstancedMesh && c.visible && c.material && !Array.isArray(c.material) && c.material.visible !== false && !c.material.transparent && !c.userData.noMerge && c.geometry && c.geometry.attributes.normal;
+  // a mesh can only be folded in if everything hanging off it can be too (hiding it hides them)
+  const mergeableTree = c => mergeable(c) && c.children.every(mergeableTree);
+  function mergeChildren(group, deep) {
+    group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(group.matrixWorld).invert(), bins = new Map();
+    const take = c => { const k = c.material.uuid + (c.geometry.attributes.uv ? "u" : "") + (c.geometry.attributes.color ? "c" : ""); (bins.get(k) || bins.set(k, []).get(k)).push(c); };
+    const visit = o => o.children.forEach(c => {
+      if (!c.visible || c.userData.merged) return;
+      if (mergeableTree(c)) { if (deep) c.traverse(take); else if (!c.children.length) take(c); }
+      else if (deep && !c.isMesh) visit(c);
+    });
+    visit(group);
+    bins.forEach(list => {
+      if (list.length < 2) return;
+      const geo = mergeGeos(list.map(c => [c.geometry, new THREE.Matrix4().multiplyMatrices(inv, c.matrixWorld)]));
+      if (!geo) return;
+      const m = new THREE.Mesh(geo, list[0].material);
+      m.castShadow = list.some(c => c.castShadow); m.receiveShadow = list.some(c => c.receiveShadow);
+      m.userData.merged = true; m.userData.surface = list[0].userData.surface;
+      group.add(m);
+      list.forEach(c => { c.visible = false; });
+    });
+  }
   function reachArm(sh, el, shP, tgt, U = .34, L = .33) {
     const d = tgt.clone().sub(shP);
     const dist = Math.min(d.length(), (U + L) * .995), dir = d.clone().normalize();
@@ -1377,6 +1460,7 @@
   }
   const concreteMat = new THREE.MeshStandardMaterial({ map: TEX.concrete, normalMap: normalMaps().concrete, normalScale: new THREE.Vector2(.85, .85), roughness: .93 });
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: .7, metalness: .4 });
+  const wallCapMat = new THREE.MeshStandardMaterial({ color: 0x6d7175, roughness: .8 }), wallPostMat = new THREE.MeshStandardMaterial({ color: 0x777b80, roughness: .9 }), wallLampMat = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
   function addWall(x, z, w, d) {
     const h = 4;
     const geo = boxUV(new THREE.BoxGeometry(w, h, d), w, h, d, 4);
@@ -1385,14 +1469,15 @@
     const ob = addProp(m, x, z, w / 2, d / 2, h, false);
     const alongX = w > d, len = alongX ? w : d, th = alongX ? d : w;
     // coping along the top, hazard stripe at the base, pillars every 10 units
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len + .2 : th + .6, .35, alongX ? th + .6 : len + .2), new THREE.MeshStandardMaterial({ color: 0x6d7175, roughness: .8 }));
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(alongX ? len + .2 : th + .6, .35, alongX ? th + .6 : len + .2), wallCapMat);
     cap.position.y = h / 2 + .17; cap.castShadow = true; m.add(cap);
     for (let t = -len / 2 + 5; t < len / 2; t += 10) {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(alongX ? .9 : th + .5, h + .3, alongX ? th + .5 : .9), new THREE.MeshStandardMaterial({ color: 0x777b80, roughness: .9 }));
+      const p = new THREE.Mesh(new THREE.BoxGeometry(alongX ? .9 : th + .5, h + .3, alongX ? th + .5 : .9), wallPostMat);
       p.position.set(alongX ? t : 0, .15, alongX ? 0 : t); p.castShadow = true; m.add(p);
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(.5, .18, .5), new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(.5, .18, .5), wallLampMat);
       lamp.position.set(alongX ? t : 0, h / 2 + .42, alongX ? 0 : t); m.add(lamp);
     }
+    mergeChildren(m, false);
     return ob;
   }
   // the north edge is out at sea: an unseen barrier, marked by a line of buoys
@@ -1681,6 +1766,15 @@
   }
   const inObstacle = (x, z, pad = .4) => obstacles.some(o => o.hw < 30 && Math.abs(x - o.x) < o.hw + pad && Math.abs(z - o.z) < o.hd + pad);
   const worldRoot = new THREE.Group(); scene.add(worldRoot);
+  const grassChunks = [], _frus = new THREE.Frustum(), _pv = new THREE.Matrix4(), _gs = new THREE.Sphere();
+  const GRASS_R = COARSE ? 55 : 85;
+  function cullGrass() {
+    _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frus.setFromProjectionMatrix(_pv);
+    const cx = camera.position.x, cz = camera.position.z;
+    for (const c of grassChunks) {
+      c.im.visible = Math.hypot(c.x - cx, c.z - cz) < GRASS_R + c.r && _frus.intersectsSphere(_gs.set(_gs.center.set(c.x, 0, c.z), c.r));
+    }
+  }
   function buildWorld(M) {
     // clear the previous map's props, scenery and trees (the boundary walls stay)
     for (let i = obstacles.length - 1; i >= 0; i--) if (obstacles[i].world) obstacles.splice(i, 1);
@@ -2090,11 +2184,13 @@
   for (let i = 0; i < PK(TREE_COUNT); i++) { const sp = spotFor(1.6); if (sp) spawnTree(sp[0], sp[1]); }
   // scenery that doesn't collide: grass tufts, flowers, rocks, forest outside the walls
   (function scatter() {
-    const N = Math.round((COARSE ? 2000 : 9000) * M.grass.n * (COARSE ? 2.4 : 3.6));
+    const N = Math.round((COARSE ? 2000 : 9000) * M.grass.n * (COARSE ? 2 : 3.6));
     const gh = (M.grass.h[0] + M.grass.h[1]) * .5;
     const geo = grassTuftGeo(COARSE ? 5 : 7, gh * 2.1, 3, gh * .72);
-    const inst = new THREE.InstancedMesh(geo, grassMat, N);
-    inst.castShadow = false; inst.receiveShadow = true;
+    // collected first, then split into a grid of chunks: only the chunks near you
+    // and in front of you are drawn, which is most of the saving on a big field
+    const all = [];
+    const inst = { setMatrixAt: (i, m) => { all[i] = all[i] || {}; all[i].m = m.clone(); }, setColorAt: (i, c) => { all[i].c = c.clone(); } };
     const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
     let n = 0;
     while (n < N) {
@@ -2115,8 +2211,21 @@
         n++;
       }
     }
-    inst.count = n;
-    worldRoot.add(inst);
+    const CH = 9, cs = ARENA * 2 / CH, chunks = new Map(), v = new THREE.Vector3();
+    all.slice(0, n).forEach(it => {
+      v.setFromMatrixPosition(it.m);
+      const k = Math.min(CH - 1, Math.floor((v.x + ARENA) / cs)) + "," + Math.min(CH - 1, Math.floor((v.z + ARENA) / cs));
+      (chunks.get(k) || chunks.set(k, []).get(k)).push(it);
+    });
+    grassChunks.length = 0;
+    chunks.forEach((list, k) => {
+      const [i, j] = k.split(",").map(Number);
+      const im = new THREE.InstancedMesh(geo, grassMat, list.length);
+      im.castShadow = false; im.receiveShadow = true; im.frustumCulled = false;
+      list.forEach((it, q) => { im.setMatrixAt(q, it.m); im.setColorAt(q, it.c); });
+      worldRoot.add(im);
+      grassChunks.push({ im, x: -ARENA + (i + .5) * cs, z: -ARENA + (j + .5) * cs, r: cs * .75 });
+    });
     // flowers
     const F = M.flowers ? 900 : 0, fg = new THREE.SphereGeometry(.07, 6, 5); fg.translate(0, .38, 0);
     const fl = new THREE.InstancedMesh(fg, new THREE.MeshStandardMaterial({ roughness: .8 }), F);
@@ -2168,6 +2277,10 @@
     }
   })();
 
+    mergeChildren(worldRoot, true);
+    // an instanced mesh is culled by the bounds of one copy at its origin, which would
+    // throw away the whole forest ring whenever the middle of the map is behind you
+    worldRoot.children.forEach(o => { if (o.isInstancedMesh) o.frustumCulled = false; });
     worldTarget = scene; unseedRng();
   }
   function applyMap(id, force) {
@@ -4156,6 +4269,11 @@
     const hHead = mkHit(.46, .48, .46, 0, 1.9, 0, "head");
     const hBody = mkHit(.84, .72, .5, 0, 1.38, 0, "body");
     const hLegs = mkHit(.64, .98, .38, 0, .5, 0, "legs");
+    const pool = {}, isPlayer = type.startsWith("p");    // a friend's model online turns its head and arms
+    mergeRig(torso, pool, mats, isPlayer ? [head, rifle, ...arms.map(a => a.sh)] : [rifle]);
+    if (isPlayer) { mergeRig(head, pool, mats, []); arms.forEach(a => mergeRig(a.sh, pool, mats, [])); }
+    legs.forEach(l => { mergeRig(l.hip, pool, mats, [l.knee]); mergeRig(l.knee, pool, mats, []); });
+    mergeRig(rifle, pool, mats, []);
     return { g, torso, head, legs, arms, rifle, mflash, mats, pods, wep: wep || "rifle", hitMeshes: [hHead, hBody, hLegs], hHead, hBody };
   }
 
@@ -4583,6 +4701,7 @@
     beam.position.y = 4.5; g.add(beam);
     const ringM = new THREE.Mesh(glowDiscGeo, new THREE.MeshBasicMaterial({ map: smokeTex, color: col, transparent: true, opacity: .55, depthWrite: false, blending: THREE.AdditiveBlending }));
     ringM.rotation.x = -Math.PI / 2; ringM.position.y = .03; ringM.scale.setScalar(1.9); g.add(ringM);
+    mergeChildren(g, false); mergeChildren(lid, false);
     const [x, z] = at || freeSpot(sector + 0.5);
     const turned = R() < 0.5;
     g.rotation.y = turned ? Math.PI / 2 : 0;
@@ -5504,6 +5623,7 @@
     const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
     const p1 = new THREE.Mesh(boxG(SHIP_B, 4.6, SHIP_L * .96), proxyMat); p1.position.y = .3; g.add(p1);
     const p2 = new THREE.Mesh(boxG(4.2, 5, 16), proxyMat); p2.position.set(0, dY + 2.4, -1.5); g.add(p2);
+    [body, mast, radar, ...turrets.flatMap(t => [t.base, t.yawG, t.pitchG])].forEach(gp => mergeChildren(gp, false));
     return { g, body, radar, turrets, wake, flag, proxies: [p1, p2] };
   }
   function spawnShip(fromHorizon) {
@@ -7339,6 +7459,21 @@
     if (!locked) flushScores();
     if (locked && (!player.alive || pendingMode !== mode)) newGame();
   });
+  // resolution follows the frame rate: when frames run slow the game renders at a
+  // lower resolution until they recover, then climbs back to full sharpness
+  const RES = { base: renderer.getPixelRatio(), k: 1, acc: 0, n: 0, wait: 3 };
+  function stepRes(dt) {
+    if (!player.alive || !active()) { RES.acc = RES.n = 0; return; }
+    RES.acc += dt; RES.n++;
+    if (RES.acc < 1.2) return;
+    const ms = RES.acc / RES.n * 1000; RES.acc = RES.n = 0;
+    if (RES.wait > 0) { RES.wait--; return; }               // let a fresh match settle first
+    let k = RES.k;
+    if (ms > 22) k = Math.max(.5, k * (ms > 34 ? .8 : .9)); else if (ms < 15 && k < 1) k = Math.min(1, k * 1.07);
+    if (Math.abs(k - RES.k) < .01) return;
+    RES.k = k; renderer.setPixelRatio(RES.base * k); renderer.setSize(innerWidth, innerHeight);
+    if (POST) POST.resize(innerWidth, innerHeight);
+  }
   addEventListener("resize", () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
@@ -10425,6 +10560,7 @@
     stepParticles(dt); stepTracers(dt); stepDecals(dt); stepFx(dt);
     updateHudFx(dt, moveAmt, rp, nowMs);
 
+    camera.updateMatrixWorld(); cullGrass(); stepRes(dt);
     if (POST) POST.render(dt); else renderer.render(scene, camera);
   }
   updateHud();
