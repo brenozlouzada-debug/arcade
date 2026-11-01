@@ -329,6 +329,19 @@ The soldiers have a new look:
 
 This also fixed an old colour bug. The tint that gives each soldier a slightly different uniform was lightening every colour by one gamma step, which is why the old uniforms looked pastel pink and yellow. Online players' models get the new build in their team colours.
 
+## Less lag
+
+The bigger field had made each frame far heavier, so the game was rebuilt to draw less:
+
+- **Static things are merged.** Every separate mesh is a separate draw call. A map's props now become one mesh per material, so a few hundred crates, barrels and rocks cost a handful of draws. The boundary walls and each chest are merged the same way, and so are a ship's fittings.
+- **Soldiers are merged too.** A soldier was 89 draw calls; now it's 16. For a hostile, the head and arms never move against the torso, so the whole upper body is one piece. Every plain-coloured part shares one vertex-coloured material, with one more each for the camouflage and the webbing. Online players' models keep a moving head and arms.
+- **Grass is in chunks.** It's split into a 9 × 9 grid, and only chunks near you and in front of you are drawn: within 85 m on a computer, 55 m on a phone. That alone cut more than a million triangles from a frame on the grassier maps.
+- **Phones get less scenery:** about twice the old prop count instead of two and a half times, and less grass.
+- **Resolution follows the frame rate.** If frames start taking too long, the game renders at a lower resolution (down to half) until they recover, then climbs back to full sharpness.
+- **Fixed in passing:** the far forest ring and flowers could vanish when the middle of the map was behind you, because three.js culls an instanced mesh by the bounds of a single copy.
+
+Together this took a typical frame from about 2,700 draw calls to under 800 on a computer, and from about 1,300 to about 560 on a phone.
+
 ## Why online play said there was no internet
 
 On the published site, hosting a game used to burn through the public code relay's allowance in about a minute: the host posted three seat offers, then polled three separate topics every two seconds, roughly ninety requests a minute from one address. ntfy.sh rate limits anonymous traffic, so it started answering 429 and every call after that failed with "check your internet". On the claude.ai copy this never showed, because that copy signals through its own database first and only falls back to the relay.
