@@ -342,6 +342,60 @@ The bigger field had made each frame far heavier, so the game was rebuilt to dra
 
 Together this took a typical frame from about 2,700 draw calls to under 800 on a computer, and from about 1,300 to about 560 on a phone.
 
+## Allies, rebuilt
+
+Your Squad Caller soldiers and the undead the Necro Staff raises now use the same build as everyone else on the field:
+
+- **The squad** wear blue-grey digital camouflage, with blue bands on the helmet and arm instead of the hostiles' red, so you can tell them apart at a glance. Their heads and arms still turn to aim.
+- **The undead** wear a rotting shirt torn open over their ribs. They have green skin, glowing green eyes and messy hair, and reach forward with bare hands.
+- **Both swim.** Allies tread water instead of walking along the seabed.
+
+## A field worth fighting over
+
+The open field has been given real cover and landmarks:
+
+- **Sandbagged positions:** U-shaped and open at the back, laid in staggered rows of burlap bags. Bullets that hit them kick up dirt.
+- **Broken brick walls:** L-shaped, with ragged tops, a window gap and rubble at the foot.
+- **Concrete pillboxes** with a firing slit, a door at the back and sandbags on the roof. You can stand on top.
+- **Wooden watchtowers** on four braced legs, with a railed platform and a roof.
+- **The beach** has steel anti-tank hedgehogs along it, and a wooden pier on piles runs out into deep water, with bollards and a lamp at the end. You can walk out along it, or swim underneath.
+- **Worn dirt tracks** wind across the field, with darker wheel ruts and ragged edges, and grass doesn't grow on them. Each map has its own track colour: snowy slush, desert sand, red canyon dust, ash. There are none on asphalt or the Moon.
+
+The fantasy maps (Sugar Rush, Mushroom Grove, Crystal Caverns and Xeno World) skip the fortifications. Everything new is merged into a few draw calls with the rest of the map, and bullets and players are stopped by plain hidden boxes.
+
+## Your gun and hands
+
+- **Your gloves:** charcoal tactical gloves with a padded knuckle guard, two-jointed fingers wrapped round the grip, a thumb over the top and a velcro cuff. Your sleeves are woodland camouflage and run off the bottom of the screen.
+- **The pistol** is built from side profiles with rounded, bevelled edges instead of boxes. It has a slide with a chamfered nose, front and rear cocking serrations, an ejection port and a dot front sight. Below that are a frame with an accessory rail and a real trigger-guard opening, and a swept grip with a beavertail and stippled panels.
+- **The assault rifle** gets the same treatment:
+  - profiled upper and lower receivers with the magwell and trigger guard
+  - a full-length rail with teeth
+  - a slotted handguard and a muzzle brake
+  - a shaped stock on its buffer tube with a butt pad
+  - a curved magazine and a tube red-dot sight
+
+## Snow and night
+
+Frostbite's snow was clipping to flat white. It is now a touch greyer and lit a little less, so drifts and footprints of light and shade show. Moonlight is a little brighter, so the field reads at night without losing the dark.
+
+## Lighter frames, again
+
+- **The distant forest** uses a coarser tree and fewer of them.
+- **The ground mesh** is coarser (the beach and hills don't need more).
+- **Grass** is drawn out to 70 m on a computer and 45 m on a phone.
+- **Shadows** are redrawn every other frame (every third on a phone).
+- **The first-person gun's** fixed parts are merged.
+
+All soldiers now share one camouflage mask texture, with each pattern's colours mixed in the shader. A colour bug was found and fixed: the slight brightness variation between uniforms could go over white and turn some soldiers black, blue or yellow.
+
+## Building it
+
+The build scripts and browser tests live in `tools/build`:
+- `mkstandalone.py` makes the offline single file.
+- `mkarcade.py` updates the arcade bundle and stages the published pages.
+- `mkdbg.sh` makes a debug build for testing.
+- `harness.js`, `t_smoke.js` and `t_play.js` run the game headless in Chromium.
+
 ## Why online play said there was no internet
 
 On the published site, hosting a game used to burn through the public code relay's allowance in about a minute: the host posted three seat offers, then polled three separate topics every two seconds, roughly ninety requests a minute from one address. ntfy.sh rate limits anonymous traffic, so it started answering 429 and every call after that failed with "check your internet". On the claude.ai copy this never showed, because that copy signals through its own database first and only falls back to the relay.
