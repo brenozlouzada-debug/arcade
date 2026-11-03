@@ -430,7 +430,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-03.1200</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-03.1600</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -490,7 +490,7 @@
   if (COARSE) renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;   // the soft variant samples far more per pixel for a small difference
   renderer.shadowMap.autoUpdate = false;   // redrawn on a schedule in the loop, not every frame
   document.body.appendChild(renderer.domElement);
 
@@ -1276,7 +1276,7 @@
     });
     t.repeat.set(300, 300); return (GT[kind] = t);
   }
-  const groundGeo = (() => { const geo = new THREE.PlaneGeometry(1500, 1500, 220, 220); geo.rotateX(-Math.PI / 2); return geo; })();
+  const groundGeo = (() => { const geo = new THREE.PlaneGeometry(1500, 1500, COARSE ? 150 : 220, COARSE ? 150 : 220); geo.rotateX(-Math.PI / 2); return geo; })();
   const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: TEX.ground, normalMap: normalMaps().ground, normalScale: new THREE.Vector2(.75, .75), vertexColors: true, roughness: .97, metalness: 0 }));
   ground.receiveShadow = true; TEX.ground.repeat.set(300, 300); scene.add(ground);
   // the beach and seabed blend from the map's own ground texture into sand
@@ -2547,6 +2547,7 @@
   });
   const puffs = [];
   function puff(pos, size, life, color = 0xcccccc, vel = null, grow = 2.5, op = .5) {
+    if (puffs.length > (COARSE ? 90 : 180)) { const o = puffs.shift(); scene.remove(o.sp); o.sp.material.dispose(); }   // a busy fight drops its oldest smoke first
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color, transparent: true, opacity: op, depthWrite: false }));
     sp.position.copy(pos); sp.scale.setScalar(size); scene.add(sp);
     puffs.push({ sp, life, t: 0, size, grow, op, v: vel ? vel.clone() : new THREE.Vector3(0, .5, 0) });
@@ -2564,6 +2565,37 @@
   const gunBase = new THREE.Vector3(0.25, -0.235, -0.56);
   gun.position.copy(gunBase);
   camera.add(gun);
+
+  // ---- a fixed set of point lights ----
+  // three.js builds every lit material's shader for an exact number of lights, so a
+  // rocket or a blast that adds its own light makes every material in view recompile:
+  // a visible hitch on each shot. Instead the scene keeps six real lights forever.
+  // Effects get a stand-in that carries a colour, brightness and position; every frame
+  // the real lights take on the brightest stand-ins nearest you, and a stand-in is let
+  // go as soon as its effect leaves the scene.
+  const LIGHT_POOL = [];
+  for (let i = 0; i < (COARSE ? 4 : 6); i++) { const l = new THREE.PointLight(0xffffff, 0, 10); scene.add(l); LIGHT_POOL.push(l); }
+  const lightStandIns = new Set();
+  class LightStandIn extends THREE.Object3D {
+    constructor(color, intensity = 1, distance = 0, decay = 1) { super(); this.color = new THREE.Color(color); this.intensity = intensity; this.distance = distance; this.decay = decay; lightStandIns.add(this); }
+    dispose() {}
+  }
+  const makeLight = (color, intensity, distance, decay) => new LightStandIn(color, intensity, distance, decay);
+  const _lw = new THREE.Vector3();
+  function syncLights() {
+    const live = [];
+    lightStandIns.forEach(L => {
+      let q = L; while (q.parent) q = q.parent;
+      if (q !== scene) { lightStandIns.delete(L); return; }
+      if (L.intensity > .01) { L.getWorldPosition(L.userData.w || (L.userData.w = new THREE.Vector3())); L.userData.k = L.intensity / (1 + L.userData.w.distanceTo(camera.position) * .15); live.push(L); }
+    });
+    live.sort((a, b) => b.userData.k - a.userData.k);
+    LIGHT_POOL.forEach((l, i) => {
+      const L = live[i];
+      if (!L) { l.intensity = 0; return; }
+      l.position.copy(L.userData.w); l.color.copy(L.color); l.intensity = L.intensity; l.distance = L.distance; l.decay = L.decay;
+    });
+  }
   const muzzle = new THREE.PointLight(0xffaa33, 0, 8);
   gun.add(muzzle);
   const muzzleObj = new THREE.Object3D(); gun.add(muzzleObj);
@@ -5245,7 +5277,7 @@
     }
     const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }));
     flame.position.z = -.4; flame.scale.setScalar(.7); g.add(flame);
-    const light = new THREE.PointLight(0xff8833, 2.5, 9); light.position.z = -.5; g.add(light);
+    const light = makeLight(0xff8833, 2.5, 9); light.position.z = -.5; g.add(light);
     g.position.copy(from); if (w.mini) g.scale.setScalar(.55);
     const dir = target.clone().sub(from).normalize();
     g.lookAt(from.clone().add(dir));
@@ -5699,7 +5731,7 @@
   }
   // ---- fires: every blast leaves the ground burning, and the fire hurts whoever stands in it ----
   const fires = [];
-  let fireLight = null;
+  const fireLight = new THREE.PointLight(0xff7a28, 0, 18, 1.6); scene.add(fireLight);   // always there, dark until something burns
   function spawnFire(point, r, life) {
     const gy = groundAt(point.x, point.z, point.y + 1.5);
     if (point.y - gy > 3.5) return;                       // a blast in mid-air does not set the ground alight
@@ -5715,7 +5747,6 @@
     scene.add(g);
     fires.push({ g, parts: [bed, flames, embers], r, life, max: life, tick: Math.random() * .3 });
     while (fires.length > (COARSE ? 7 : 14)) disposeFire(fires.shift());
-    if (!fireLight) { fireLight = new THREE.PointLight(0xff7a28, 0, 18, 1.6); scene.add(fireLight); }
   }
   function disposeFire(f) { scene.remove(f.g); f.parts.forEach(m => { if (m.geometry !== glowDiscGeo) m.geometry.dispose(); m.material.dispose(); }); }
   function clearFires() { fires.forEach(disposeFire); fires.length = 0; if (fireLight) fireLight.intensity = 0; }
@@ -6198,7 +6229,7 @@
     const gy = groundAt(point.x, point.z, point.y + 1.5), onGround = point.y - gy < 1.6;
     const dust = new THREE.Mesh(glowDiscGeo, dustRingMat());
     dust.rotation.x = -Math.PI / 2; dust.position.set(point.x, gy + .05, point.z); dust.visible = onGround && !(WATER_ON && gy < WATER_Y); dust.renderOrder = 2; scene.add(dust);
-    const light = new THREE.PointLight(0xffd6a0, 0, r * 8, 1.6); light.position.copy(point).add(new THREE.Vector3(0, .8, 0)); scene.add(light);
+    const light = makeLight(0xffd6a0, 0, r * 8, 1.6); light.position.copy(point).add(new THREE.Vector3(0, .8, 0)); scene.add(light);
     fx.push({ t: 0, dur: DUR,
       update(k) {
         const t = k * DUR;
@@ -6224,6 +6255,27 @@
   }
   // flames that cling to a burning enemy: a small cluster of the same sheets
   const enemyFlameGeo = (() => { const g = flameGeo(5, .32, 1.05); g.boundingSphere.radius = 2.2; return g; })();
+
+  // Every effect's shader is compiled at the start of the first match, while the
+  // screen is still settling, instead of the first time that effect appears.
+  let warmed = false;
+  function warmShaders() {
+    if (warmed) return; warmed = true;
+    const g = new THREE.Group(); g.position.set(0, -50, 0);
+    const box = boxG(.1, .1, .1);
+    [flameMat(), bedMat(), blastLobeMat(1), dustRingMat(), shockMat(), wakeMat, rippleMat].forEach(m => g.add(new THREE.Mesh(box, m)));
+    g.add(new THREE.Points(emberGeo(2, 1), emberMat()), new THREE.LineSegments(sparkGeo(2), sparkMat()));   // the same kinds of object they really are
+    ["grunt", "juggernaut"].forEach(t => g.add(buildEnemy(t, t === "juggernaut" ? "minigun" : "rifle").g));
+    g.add(buildAlly("undead").g);
+    scene.add(g);
+    // compiled with the settings the scene is really drawn with: with post-processing on,
+    // that is linear output and no tone mapping (the final pass does both)
+    const tm = renderer.toneMapping, enc = renderer.outputEncoding;
+    if (POST) { renderer.toneMapping = THREE.NoToneMapping; renderer.outputEncoding = THREE.LinearEncoding; }
+    try { renderer.compile(scene, camera); } catch (_) {}
+    renderer.toneMapping = tm; renderer.outputEncoding = enc;
+    scene.remove(g);
+  }
   let burnWarn = -9;
   let selfBlast = false;   // stops a chain of your own blasts from re-entering through thorns and the like
   function explode(point, r, dmg, owner) {
@@ -6619,7 +6671,7 @@
       const g = new THREE.Group(); g.position.set(p.x, 15, p.z);
       const cm = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 1, transparent: true, opacity: .92 });
       for (let i = 0; i < 7; i++) { const c = new THREE.Mesh(new THREE.SphereGeometry(rnd(2.2, 3.6), 12, 8), cm); c.scale.y = .45; c.position.set(rnd(-4, 4), rnd(-.5, .8), rnd(-4, 4)); g.add(c); }
-      const lt = new THREE.PointLight(0xaabbff, 0, 40); lt.position.y = -2; g.add(lt);
+      const lt = makeLight(0xaabbff, 0, 40); lt.position.y = -2; g.add(lt);
       scene.add(g); storms.push({ g, lt, pos: new THREE.Vector3(p.x, 0, p.z), life: 9, cd: .4, owner: net.myId });
       if (storms.length > 1) scene.remove(storms.shift().g);
       N({ type: "lowpass", f: 600, f2: 100, dur: 1, vol: .3 });
@@ -7185,7 +7237,7 @@
     const g = new THREE.Group(); g.position.copy(point).setY(Math.max(1, point.y + .6));
     const core = new THREE.Mesh(new THREE.SphereGeometry(.55, 16, 12), new THREE.MeshBasicMaterial({ color: 0x050008 })); g.add(core);
     for (let i = 0; i < 3; i++) { const r = new THREE.Mesh(new THREE.TorusGeometry(1 + i * .6, .06, 8, 28), new THREE.MeshBasicMaterial({ color: 0xaa55ff, transparent: true, opacity: .7 - i * .15, blending: THREE.AdditiveBlending, depthWrite: false })); r.rotation.x = 1.2 + i * .35; r.rotation.y = i; g.add(r); }
-    const lt = new THREE.PointLight(0x9944ff, 4, 14); g.add(lt);
+    const lt = makeLight(0x9944ff, 4, 14); g.add(lt);
     scene.add(g); vortices.push({ g, pos: g.position.clone(), t: 0, life: 3.2, owner, dmgT: 0 });
     sfx.chime(2);
   }
@@ -10263,7 +10315,7 @@
     player.pos.set(0, 1.7, 0); player.invuln = 0;
     if (mode === "online") { const sp = SPAWNS[net.myId % SPAWNS.length]; player.pos.set(sp[0], 1.7, sp[1]); player.invuln = 2.5; }
     matchLive = true; spawnDog();
-    updateHud(); startWave();
+    updateHud(); startWave(); warmShaders();
     if (mode === "survival") for (let i = 0; i < (COARSE ? 1 : 2); i++) spawnShip(false);
     if (mode === "free") { banner("FREE PLAY", "shoot targets \u2022 open chests \u2022 build"); for (let i = 0; i < TARGET_COUNT; i++) spawnTarget(i); }
     for (let i = 0; i < CHEST_COUNT; i++) spawnChest(i * TARGET_COUNT / CHEST_COUNT);
@@ -10770,7 +10822,7 @@
     stepParticles(dt); stepTracers(dt); stepDecals(dt); stepFx(dt);
     updateHudFx(dt, moveAmt, rp, nowMs);
 
-    camera.updateMatrixWorld(); cullGrass(); stepRes(dt);
+    camera.updateMatrixWorld(); cullGrass(); stepRes(dt); syncLights();
     if ((++shadowTick) % (COARSE ? 3 : 2) === 0) renderer.shadowMap.needsUpdate = true;
     if (POST) POST.render(dt); else renderer.render(scene, camera);
   }

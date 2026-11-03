@@ -396,6 +396,19 @@ The build scripts and browser tests live in `tools/build`:
 - `mkdbg.sh` makes a debug build for testing.
 - `harness.js`, `t_smoke.js` and `t_play.js` run the game headless in Chromium.
 
+## No more stutter on every shot
+
+Rockets, explosions, storm clouds and vortexes each used to bring their own light into the scene. three.js builds every lit material's shader for an exact number of lights, so each of those made every material in view recompile: a visible hitch on every rocket and every blast.
+
+Now the scene holds a fixed set of six point lights (four on a phone) from start to finish. An effect gets a stand-in carrying its colour, brightness and position. Every frame, the real lights take on the brightest stand-ins nearest you, and a stand-in is let go as soon as its effect leaves the scene. The fire light also exists from the start, so the first fire no longer causes a hitch.
+
+The effects' shaders (flames, embers, the burning ground, fireball lobes, sparks, the dust ring, the shockwave, ship wakes, swimmers' ripples and the soldier and boss materials) are all compiled once at the start of your first match, with the same settings the scene is really drawn with. A test that sets off three blasts, a rocket and a fire now compiles no new shaders at all. Before, it compiled seven, and the old light churn had left 65 programs where 42 do the job.
+
+Also:
+- Shadows use plain PCF filtering instead of the soft variant, which samples far more per pixel for a small difference.
+- In a heavy fight, smoke puffs are capped (180, or 90 on a phone), and the oldest smoke goes first.
+- Phones use a coarser ground mesh.
+
 ## Why online play said there was no internet
 
 On the published site, hosting a game used to burn through the public code relay's allowance in about a minute: the host posted three seat offers, then polled three separate topics every two seconds, roughly ninety requests a minute from one address. ntfy.sh rate limits anonymous traffic, so it started answering 429 and every call after that failed with "check your internet". On the claude.ai copy this never showed, because that copy signals through its own database first and only falls back to the relay.
