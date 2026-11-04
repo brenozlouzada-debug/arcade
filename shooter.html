@@ -430,7 +430,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-04.1500</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-04.1900</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -1133,7 +1133,7 @@
       uniforms: {
         tDiffuse: { value: null }, tBloom: { value: null }, texel: { value: new THREE.Vector2() },
         exposure: { value: 1.02 }, bloomK: { value: .3 }, vig: { value: .36 }, grain: { value: .028 },
-        time: { value: 0 }, sat: { value: 1.06 }, contrast: { value: 1.08 }, lift: { value: new THREE.Vector3(.012, .015, .024) },
+        time: { value: 0 }, sat: { value: .9 }, contrast: { value: 1.03 }, lift: { value: new THREE.Vector3(.014, .015, .02) },
         gain: { value: new THREE.Vector3(1, 1, 1) }, ab: { value: .45 }
       },
       vertexShader: VERT,
@@ -1319,7 +1319,8 @@
     return Math.min(a, b, c) * .92;
   }
   const GROUND_U = { uDirt: { value: new THREE.Color(0x6b5236) }, uPathK: { value: 1 } };
-  const SAND = new THREE.Color(0xf2ece0);   // a light tint: the sand texture brings the colour
+  const SAND = new THREE.Color(0xf2ece0);
+  const _grey = new THREE.Color();   // a light tint: the sand texture brings the colour
   function paintGround(M) {
     const geo = groundGeo, pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), sandK = new Float32Array(pos.count);
     const gA = new THREE.Color(M.ground.a), gB = new THREE.Color(M.ground.b), gC = new THREE.Color(M.ground.c), far = new THREE.Color(M.ground.far);
@@ -1331,6 +1332,7 @@
       if (m > 0.62) c.lerp(gC, (m - 0.62) * 2.2);
       const d = Math.hypot(x, z);
       if (d > 170) c.lerp(far, Math.min(1, (d - 170) / 260));
+      { const l = c.r * .2126 + c.g * .7152 + c.b * .0722; c.lerp(_grey.setRGB(l, l, l), .22); }   // real soil and sand are never as saturated as paint
       // the beach is sand, and the seabed darkens as it deepens
       if (WATER_ON) {
         const sea = shoreZ(x) - z;
@@ -1542,9 +1544,10 @@
   }
   // the north edge is out at sea: an unseen barrier, marked by a line of buoys
   { const nw = addWall(0, -ARENA, ARENA * 2 + 1, 1); nw.mesh.visible = false; nw.sea = true; }
-  addWall(0, ARENA, ARENA * 2 + 1, 1);
-  addWall(-ARENA, 0, 1, ARENA * 2 + 1);
-  addWall(ARENA, 0, 1, ARENA * 2 + 1);
+  // the south, west and east edges: concrete on built-up maps; elsewhere the wall is
+  // unseen and the field simply ends in a belt of trees or rock (see buildWorld)
+  const ARENA_WALLS = [addWall(0, ARENA, ARENA * 2 + 1, 1), addWall(-ARENA, 0, 1, ARENA * 2 + 1), addWall(ARENA, 0, 1, ARENA * 2 + 1)];
+  const BUILT_UP = ["city", "neon", "lab", "castle", "westtown", "moon"];
 
   const placed = [];
   function spotFor(r, tries = 60) {
@@ -2402,10 +2405,12 @@
         const k = rnd(.5, 1.3);
         inst.setMatrixAt(n, mtx.compose(p.set(x, 0, z), q, s.set(k, k * rnd(.45, 1.5), k)));
         // a real sward is never one colour: some of it is in seed, some of it dry
-        const dry = R() < .22;
-        c.setHSL(rnd(M.grass.h[0], M.grass.h[1]) + (dry ? .035 : 0),
-          rnd(M.grass.s[0], M.grass.s[1]) * (dry ? .85 : 1),
-          rnd(M.grass.l[0], M.grass.l[1]) * rnd(.72, 1.25) + (dry ? .08 : 0));
+        // a real sward is never one colour: patches of it are in seed, dry or in shade,
+        // and none of it is as saturated as paint
+        const dry = R() < .3, dark = !dry && R() < .25;
+        c.setHSL(rnd(M.grass.h[0], M.grass.h[1]) + (dry ? .045 : 0),
+          rnd(M.grass.s[0], M.grass.s[1]) * (dry ? .6 : .74),
+          rnd(M.grass.l[0], M.grass.l[1]) * rnd(.68, 1.08) * (dark ? .72 : 1) + (dry ? .07 : 0));
         inst.setColorAt(n, c);
         n++;
       }
@@ -2474,6 +2479,44 @@
         worldRoot.add(im);
       }
     }
+    // the edge of the field: a dense belt hard against the boundary, so the field ends
+    // in trees (or rock on the dry maps) the way a real clearing does
+    const belt = M.forest === "none" ? 0 : (COARSE ? 110 : 280);
+    const beltSpot = () => {
+      for (let k = 0; k < 20; k++) {
+        const side = Math.floor(R() * 3), t = rnd(-ARENA - 14, ARENA + 14), d = ARENA + rnd(1.2, 15);
+        const [x, z] = side === 0 ? [d, t] : side === 1 ? [-d, t] : [t, d];
+        if (terrainH(x, z) > WATER_Y + .6) return [x, z];
+      }
+      return null;
+    };
+    if (belt && M.forest === "spires") {
+      const sp = new THREE.InstancedMesh(new THREE.ConeGeometry(2.3, 9, 7), new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 }), belt);
+      let n2 = 0;
+      for (let i = 0; i < belt; i++) {
+        const at = beltSpot(); if (!at) continue; const k = rnd(.45, 1.3), y = terrainH(at[0], at[1]);
+        q.setFromEuler(e.set(rnd(-.08, .08), rnd(0, 6), rnd(-.08, .08)));
+        sp.setMatrixAt(n2, mtx.compose(p.set(at[0], y + 4.4 * k * .9, at[1]), q, s.set(k * rnd(.8, 1.3), k, k * rnd(.8, 1.3))));
+        sp.setColorAt(n2++, new THREE.Color(pick(FC)).multiplyScalar(rnd(.75, 1.15)));
+      }
+      sp.count = n2; sp.castShadow = false; worldRoot.add(sp);
+    } else if (belt) {
+      const kind = M.tree === "acacia" ? "acacia" : M.tree === "dead" ? "dead" : "pine", per = Math.ceil(belt / 4);
+      for (let v = 0; v < 4; v++) {
+        // the coarse far-tree model, and no shadows: an instanced belt is never culled, so it
+        // would be drawn into the shadow map whole every time
+        const im = new THREE.InstancedMesh(treeGeo(kind, FC, -1, v, true), foliageMat, per);
+        im.castShadow = false; im.receiveShadow = false;
+        let n2 = 0;
+        for (let i = 0; i < per; i++) {
+          const at = beltSpot(); if (!at) continue; const k = rnd(.8, 1.7), y = terrainH(at[0], at[1]);
+          q.setFromEuler(e.set(0, rnd(0, 6.283), 0));
+          im.setMatrixAt(n2, mtx.compose(p.set(at[0], y, at[1]), q, s.set(k * rnd(.85, 1.15), k * rnd(.9, 1.15), k * rnd(.85, 1.15))));
+          im.setColorAt(n2++, new THREE.Color(0xffffff).multiplyScalar(rnd(.72, 1.05)));
+        }
+        im.count = n2; worldRoot.add(im);
+      }
+    }
   })();
 
     mergeChildren(worldRoot, true, true);
@@ -2500,6 +2543,7 @@
     WATER_ON = M !== MAPS.moon;
     paintGround(M);
     applyWater(M);
+    ARENA_WALLS.forEach(o => { o.mesh.visible = BUILT_UP.includes(Object.keys(MAPS).find(k => MAPS[k] === M)); });
     { const id = Object.keys(MAPS).find(k => MAPS[k] === M), T = { snow: [0xb4bcc4, .8], aurora: [0xb4bcc4, .8], desert: [0xa08050, .8], sunset: [0xa07850, .8], redrock: [0x8a4a2e, .8], beach: [0xc0a878, .6], volcano: [0x3a3430, .9], candy: [0xd890b0, .7] }[id] || [0x6b5236, 1];
       GROUND_U.uDirt.value.setHex(T[0]); GROUND_U.uPathK.value = ["city", "moon", "neon", "lab", "castle"].includes(id) ? 0 : T[1]; }
     // the rock is in the vertices now, so the map tints the whole range at once
