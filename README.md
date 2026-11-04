@@ -453,6 +453,15 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Real faces, and leaner soldiers
+
+- **A sculpted head.** The head is now sculpted on its own at a much finer level of detail than the body: a skull with a forehead, brow ridge, cheekbones and temples, a defined jawline and chin, a nose with a bridge, tip, wings and nostrils, upper and lower lips with a groove above them, and ears with a rim and a hollow.
+- **Eyes that look back.** Each eye is a real eyeball set between upper and lower lids, with a white, a coloured iris with a darker rim, and a pupil, angled slightly inward so the soldier seems to focus on you.
+- **Painted skin.** The face is coloured in the shader: warmth on the nose, cheeks and ears, the lips, a day's stubble, eyebrows and a lash line in the soldier's hair colour, and a little shade in the eye sockets. The old stuck-on eye and brow pieces are gone.
+- **Every soldier looks different.** Each enemy gets one of eight skin tones and its own hair and eye colour. Undead keep their green skin and glowing eyes; heavies and bosses keep their masks.
+- **Less chubby.** The faces are narrower, with slimmer cheeks, a firmer jaw and no jowls. The neck is slimmer too, and the body is trimmed at the belly, hips, thighs and arms. Shoulders stay broad, so the soldiers read as fit, not thin.
+- **Sunglasses that fit.** The scout's wraparound shades now have arms that run back to the ears.
+
 ## Why online play said there was no internet
 
 On the published site, hosting a game used to burn through the public code relay's allowance in about a minute: the host posted three seat offers, then polled three separate topics every two seconds, roughly ninety requests a minute from one address. ntfy.sh rate limits anonymous traffic, so it started answering 429 and every call after that failed with "check your internet". On the claude.ai copy this never showed, because that copy signals through its own database first and only falls back to the relay.
