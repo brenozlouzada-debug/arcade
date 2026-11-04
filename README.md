@@ -409,6 +409,44 @@ Also:
 - In a heavy fight, smoke puffs are capped (180, or 90 on a phone), and the oldest smoke goes first.
 - Phones use a coarser ground mesh.
 
+## Soldiers with real bodies
+
+Every soldier on the field (hostiles, bosses, your squad, the undead and your friends' models online) now has a sculpted body instead of a stack of cylinders and spheres. It is one smooth surface, modelled offline in `tools/soldier/sculpt.py` and shipped compressed (64 KB, 7,000 triangles):
+
+- **Boots and legs:** flat-soled boots with trousers bloused over them, a calf and shin, a real knee, and a thigh with the quad muscle.
+- **The torso:** glutes and a belted waist, a ribcage with the pecs and lats, trapezius and deltoids.
+- **Arms:** a bicep and forearm, and a gloved hand with a thumb.
+- **The neck:** with the shirt collar round it.
+- **The face:** a skull with a jaw, chin and cheekbones, a brow ridge over eye sockets, a nose with nostril wings, lips and ears.
+
+The body is skinned to the ten joints the rig already animates (hips, knees, shoulders, elbows, torso and head). So it bends smoothly when soldiers walk, aim, swim, lean and fall, and their arms wrap round whatever gun they're carrying. One material colours it:
+- **The camouflage** is projected onto the body in its rest pose, so the pattern stays put on the cloth as the limbs move.
+- **Skin, gloves and boots** are coloured by region.
+- **The undead** get green bare hands.
+
+All the kit stays as it was: helmets, hats, plate carriers, pouches, packs, knee pads, masks and the bosses' armour. Each soldier now draws in fewer pieces than before.
+
+## Warships, rebuilt as modern destroyers
+
+The destroyers were redrawn with a modern warship's lines:
+
+- **The hull** has weathered plating with welded seams, rust weeping from the scuppers and grime along the waterline. A white bow wave curls off the stem as it moves.
+- **The deck** is dark non-skid with a painted walkway, and there's a helicopter pad on the stern with its circle and H.
+- **The superstructure** is built from sloped, stealthy blocks. The bridge has a raked window band, wings and red and green running lights. Flat octagonal radar arrays look out from the bridge and the hangar.
+- **Above it** are twin raked funnels with black caps, and a slim tapered mast with yardarms, antennas, a satellite dome and the sweeping radar.
+- **Weapons:** a faceted main gun forward and a second mount aft, each with one long barrel. There are banks of missile hatches set into the deck fore and aft, and close-in weapon domes.
+- **Fittings:** rigid-hull boats in davits and life-raft canisters along the rails.
+
+## A much lighter frame for the processor
+
+A profile of a busy wave-10 fight found that most of the game's own per-frame time was spent walking the scene graph, not running the game:
+
+- **Every first-person gun model was attached to the camera.** That is over a hundred guns and thousands of hidden parts, even though only the one in your hands is shown. Now only that one is attached.
+- **Merged-away originals stayed in the scene.** When static parts were merged into one mesh, the originals were only hidden, so three.js still walked thousands of them every frame. They now leave the scene graph; props that stop bullets keep their last position for aiming rays.
+- **The map's transforms are frozen.** Nothing in a map moves once it is built, so its transforms are no longer recomputed every frame.
+
+The game's own update in that fight went from about 8.8 ms a frame to about 3.5 ms. The renderer saves about as much again, because it walks the same scene.
+
 ## Why online play said there was no internet
 
 On the published site, hosting a game used to burn through the public code relay's allowance in about a minute: the host posted three seat offers, then polled three separate topics every two seconds, roughly ninety requests a minute from one address. ntfy.sh rate limits anonymous traffic, so it started answering 429 and every call after that failed with "check your internet". On the claude.ai copy this never showed, because that copy signals through its own database first and only falls back to the relay.
