@@ -447,6 +447,12 @@ A profile of a busy wave-10 fight found that most of the game's own per-frame ti
 
 The game's own update in that fight went from about 8.8 ms a frame to about 3.5 ms. The renderer saves about as much again, because it walks the same scene.
 
+## A more natural look
+
+- **The field ends in nature, not concrete.** On the outdoor maps the concrete boundary walls are gone: they still stop you, but you can't see them. The field ends in a dense belt of trees right along the edge, or rock spires on the dry maps, the way a real clearing ends. City, Neon District, Test Lab, Iron Keep, Dead Gulch and Moon Base keep their walls, because walls belong there.
+- **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
+- **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
+
 ## Why online play said there was no internet
 
 On the published site, hosting a game used to burn through the public code relay's allowance in about a minute: the host posted three seat offers, then polled three separate topics every two seconds, roughly ninety requests a minute from one address. ntfy.sh rate limits anonymous traffic, so it started answering 429 and every call after that failed with "check your internet". On the claude.ai copy this never showed, because that copy signals through its own database first and only falls back to the relay.
