@@ -453,6 +453,17 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Soldiers built from a real human model
+
+- **A real body, made in Blender.** Every soldier, ally and online player is now built on Blender Studio's realistic male base mesh, from their free Human Base Meshes bundle (CC0, sculpted by Dan Ulrich), in place of the hand-built shapes. It has real anatomy: a properly sculpted face with eyelids, a real nose, lips and ears, and real proportions for the neck, shoulders, arms, hands and legs.
+- **Fitted to the game's skeleton.** In Blender the model gets bones at its own joints and bone-heat skin weights. Its A-pose is then straightened onto the game's rig: arms hanging, legs straight, the head set back over the spine. The rig's shoulders and hips moved to where a real body has them, and the arms' reach was updated so hands still land on the rifle grip.
+- **Dressed as a soldier.** The uniform is the body smoothed over (no muscles or anatomy show through) and let out a little. The trousers are bloused into real combat boots (a shaft, a toe cap and heel, a flat sole), the hands are snug gloves, and there's a collar at the neck.
+- **Game-sized.** Blender reduces the body to about 12,700 triangles, about what the old one used, keeping the face much denser than the clothes. It ships with its eyeballs, its skin weights and a region per vertex (uniform, skin, glove, boot, eye).
+- **Painted to match.** Brows taper from a fuller inner end and are drawn as short hairs. The eyes sit a touch deeper under the lids, with a shadow from the upper lid. Lips, stubble, warmth on the nose, cheeks and ears, and the lash line are all placed on the new face. Skin tones are a little warmer, so the palest no longer washes out.
+- **Gear refitted.** The boonie hat, the scout's sunglasses, the heavy's face mask and the undead's hair were moved to fit the new head.
+
+The pipeline is in `tools/soldier`: `fit_human.py`, `clothe.py` and `reduce.py`, run with Blender's Python module (`pip install bpy`).
+
 ## Real faces, and leaner soldiers
 
 - **A sculpted head.** The head is now sculpted on its own at a much finer level of detail than the body: a skull with a forehead, brow ridge, cheekbones and temples, a defined jawline and chin, a nose with a bridge, tip, wings and nostrils, upper and lower lips with a groove above them, and ears with a rim and a hollow.
