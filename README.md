@@ -460,7 +460,9 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **Dressed as a soldier.** The uniform is the body smoothed over (no muscles or anatomy show through) and let out a little. The trousers are bloused into real combat boots (a shaft, a toe cap and heel, a flat sole), the hands are snug gloves, and there's a collar at the neck.
 - **Game-sized.** Blender reduces the body to about 12,700 triangles, about what the old one used, keeping the face much denser than the clothes. It ships with its eyeballs, its skin weights and a region per vertex (uniform, skin, glove, boot, eye).
 - **Painted to match.** Brows taper from a fuller inner end and are drawn as short hairs. The eyes sit a touch deeper under the lids, with a shadow from the upper lid. Lips, stubble, warmth on the nose, cheeks and ears, and the lash line are all placed on the new face. Skin tones are a little warmer, so the palest no longer washes out.
-- **Gear refitted.** The boonie hat, the scout's sunglasses, the heavy's face mask and the undead's hair were moved to fit the new head.
+- **Relaxed eyes.** The base mesh's eyes are wide open, so the upper lid is painted down over the top of the iris and the lower lid up to its bottom edge, with the lash line along the lid. There's no ring of white round the iris any more.
+- **Undead hair that fits.** The undead's hair is painted onto the scalp itself: a ragged crop that follows the skull down to a hairline over the brow, above the ears and at the nape, with a few bare patches and a matte finish. It replaces the cap that sat on top of the head.
+- **Gear refitted.** The boonie hat, the scout's sunglasses and the heavy's face mask were moved to fit the new head.
 
 The pipeline is in `tools/soldier`: `fit_human.py`, `clothe.py` and `reduce.py`, run with Blender's Python module (`pip install bpy`).
 
