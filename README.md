@@ -453,6 +453,17 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Aliens, sea monsters, saucers and submarines
+
+Each map now has its own enemies and its own ship.
+
+- **Moon Base and Xeno World: aliens.** Tall, slim aliens with a swollen cranium, big glossy black almond eyes, a pointed chin and a slit of a mouth, grey-green mottled skin, long fingers. They wear sleek dark suits with glowing seams (a chevron on the chest, the spine, the cuffs and a stripe down each leg), a glowing emblem and buckle, and a chrome power pack on the back; the big ones have chrome pauldrons. The bosses become **The Overlord** and **The Xeno Warlord**.
+- **Coral Reef: sea monsters.** Fish-men with a long, flat head, bulging gold eyes, a wide mouth full of small sharp teeth, gills on the neck, a crest down the crown, fan fins for ears, a fin down the back and along the forearms and calves, and webbed flippers for feet. The skin is scaled: dark down the back, pale on the belly, blotched. The big ones wear barnacled shell armour. The bosses become **The Leviathan** and **The Tide King**.
+- **Guns you can't get.** Aliens fire **ray guns** (chrome with glowing coils, two-shot green energy bolts), heavies carry a **plasma cannon** that lobs glowing balls that burst, and the Overlord has a **ray repeater**. Sea monsters fire a **harpoon gun** (crusted bronze with a bone stock and a coil of line) that shoots real harpoons; the big ones fire **harpoon volleys**. None of these are ever dropped when they die.
+- **The alien saucer** (Moon Base, Xeno World). It hovers high over the field in a slow wobbling orbit, its rim turning with chasing lights, portholes lit, the drive glowing underneath. It fires plasma balls from three pods, and every so often switches on a tractor beam and sets aliens down on the ground. Shot down, it trails fire and smoke, tumbles out of the sky and blows up where it lands. Another comes down from the sky later.
+- **The submarine** (Coral Reef). It surfaces as it arrives, blowing its tanks, and runs with its deck awash. It launches missiles from the tubes behind the sail that climb in a column of smoke and come down on you, and sends sea monsters over the side to swim in. Every other map with water keeps the warships.
+- **Made in Blender.** The two creature bodies are built from the same Blender Studio base mesh as the soldiers (`tools/creatures/make_creature.py`), so they share the soldiers' skeleton, skin weights and animations; the heads are resculpted, the human face smoothed away, and the fins, crest and eyes modelled in Blender. The ray gun, harpoon gun, harpoon, saucer and submarine are modelled in Blender too (`tools/props/make_props.py`) and shipped with their own colours and glow.
+
 ## Warships that look like real destroyers
 
 - **A destroyer's hull.** The hull is longer and much slimmer: 34 long by 4.3 wide, the slender 8 : 1 of a real destroyer, where it used to be a stubby 5.5 : 1. It's lofted from more stations, with a fine entry, a forecastle that flares and rises toward the raked stem, and a knuckle down the sides.
