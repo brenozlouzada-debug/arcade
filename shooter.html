@@ -430,7 +430,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-06.2300</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-06.2330</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -4407,13 +4407,13 @@
     const pal = T.camo ? palOf(T.camo).map(q => q.clone()) : [c(T.uniform), c(T.uniform).multiplyScalar(.75), c(T.uniform).multiplyScalar(1.12), c(T.uniform).multiplyScalar(.6)];
     const U = { uMask: { value: CAMO_MASK }, uC0: { value: pal[0] }, uC1: { value: pal[1] }, uC2: { value: pal[2] }, uC3: { value: pal[3] },
       uSkin: { value: c(skinHex) }, uGlove: { value: c(undead ? skinHex : gloveHex) }, uBoot: { value: c(0x2a241e) },
-      uHair: { value: c(hairHex || 0x2a1f18) }, uIris: { value: c(undead ? 0x7aff9a : irisHex || 0x4a3220) }, uSclera: { value: c(undead ? 0x3a4030 : 0xe6ddd2) } };
+      uHair: { value: c(hairHex || 0x2a1f18) }, uIris: { value: c(undead ? 0x7aff9a : irisHex || 0x4a3220) }, uSclera: { value: c(undead ? 0x3a4030 : 0xe6ddd2) }, uScalp: { value: undead ? 1 : 0 } };
     const m = new THREE.MeshStandardMaterial({ skinning: true, roughness: .9, metalness: 0, emissive: 0x000000, envMapIntensity: .5 });
     m.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float region; varying float vRegion; varying vec3 vRest; varying vec3 vRestN;")
         .replace("#include <begin_vertex>", "#include <begin_vertex>\nvRegion = region; vRest = position; vRestN = normal;");
-      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D uMask; uniform vec3 uC0, uC1, uC2, uC3, uSkin, uGlove, uBoot, uHair, uIris, uSclera; varying float vRegion; varying vec3 vRest; varying vec3 vRestN;\nfloat fh3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }")
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D uMask; uniform vec3 uC0, uC1, uC2, uC3, uSkin, uGlove, uBoot, uHair, uIris, uSclera; uniform float uScalp; varying float vRegion; varying vec3 vRest; varying vec3 vRestN;\nfloat fh3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }\nfloat vn3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(mix(fh3(i), fh3(i + vec3(1, 0, 0)), f.x), mix(fh3(i + vec3(0, 1, 0)), fh3(i + vec3(1, 1, 0)), f.x), f.y), mix(mix(fh3(i + vec3(0, 0, 1)), fh3(i + vec3(1, 0, 1)), f.x), mix(fh3(i + vec3(0, 1, 1)), fh3(i + vec3(1, 1, 1)), f.x), f.y), f.z); }")
         .replace("#include <map_fragment>", `
           vec3 rn = pow(abs(normalize(vRestN)), vec3(4.)); rn /= rn.x + rn.y + rn.z;
           vec3 qq = vRest * 1.8;
@@ -4422,6 +4422,7 @@
           vec3 rc = vRegion < .5 ? camo : vRegion < 1.5 ? uSkin : vRegion < 2.5 ? uGlove : uBoot;
           vec3 q = vRest; float ax = abs(q.x);
           vec3 eyeC = vec3(sign(q.x) * .0395, 1.8884, .105);
+          float lidM = 0., hairM = 0.;
           if (vRegion > .5 && vRegion < 1.5 && q.y > 1.72) {
             // the face, painted on the sculpted head: warmth on the nose, cheeks and ears,
             // the lips, a day's stubble, brows and the lash line, a little shade in the sockets
@@ -4441,6 +4442,15 @@
             float lash = smoothstep(.0028, .0, abs(ed - .0168)) * step(eyeC.y - .001, q.y) * step(.11, q.z);
             rc = mix(rc, uHair * .5, lash * .85);
             rc *= 1. - .14 * smoothstep(.03, .015, length((q - eyeC) * vec3(1., 1.25, 1.))) * step(.09, q.z);
+            if (uScalp > .5) {
+              // the undead's hair, painted on the scalp so it follows the skull: a ragged,
+              // thinning crop down to a hairline over the brow, above the ears and at the nape
+              float hl = mix(1.85, 1.94, smoothstep(-.07, .1, q.z)) + (vn3(q * 160.) - .5) * .012;
+              hl = max(hl, 1.905 * step(.07, ax) * step(-.05, q.z) * step(q.z, .07));
+              float hair = smoothstep(hl, hl + .007, q.y) * smoothstep(.1, .2, vn3(q * 70. + 3.));   // with a few small bare patches
+              float strands = .55 + .35 * vn3(q * vec3(900., 260., 900.)) + .2 * fh3(floor(q * vec3(2500., 800., 2500.)));
+              rc = mix(rc, uHair * strands, hair * .95); hairM = hair;
+            }
           }
           if (vRegion > 3.5) {
             // the eye: a sclera, an iris with a darker rim, the pupil; it looks a touch inward
@@ -4450,11 +4460,20 @@
             rc = mix(uSclera, ir, smoothstep(.895, .908, k));
             rc *= 1. - .45 * smoothstep(.89, .908, k) * smoothstep(.935, .908, k);   // the limbal ring
             rc = mix(rc, vec3(.02), smoothstep(.975, .98, k));
-            rc *= 1. - .55 * smoothstep(eyeC.y + .002, eyeC.y + .009, q.y);       // the upper lid's shadow
+            rc *= 1. - .5 * smoothstep(eyeC.y + .0005, eyeC.y + .0045, q.y);      // the upper lid's shadow
             rc *= 1. - .25 * smoothstep(.75, .55, k);                             // and the corners
+            // relaxed lids: the upper one comes down over the top of the iris and the lower one
+            // up to its bottom edge, so the eye isn't ringed with white; painted on the
+            // eyeball as lid skin, with the lash line along the upper edge
+            float ex = (q.x - eyeC.x) / .016;
+            float yU = eyeC.y + .0046 - ex * ex * .0042, yL = eyeC.y - .0054 + ex * ex * .0034;
+            float lidU = smoothstep(yU - .0004, yU + .0004, q.y), lidL = smoothstep(yL + .0004, yL - .0004, q.y);
+            rc = mix(rc, uSkin * .72, max(lidU, lidL));
+            rc = mix(rc, uHair * .35, smoothstep(.0011, .0, abs(q.y - yU - .0006)) * .9);
+            lidM = max(lidU, lidL);
           }
           diffuseColor.rgb *= rc;`)
-        .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor *= vRegion > 3.5 ? .12 : vRegion > .5 && vRegion < 1.5 ? .62 : vRegion > 2.5 ? .8 : 1.;");
+        .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor *= vRegion > 3.5 ? mix(.12, .6, lidM) : vRegion > .5 && vRegion < 1.5 ? mix(.62, 1., hairM) : vRegion > 2.5 ? .8 : 1.;");
     };
     m.customProgramCacheKey = () => "soldierBody";
     return m;
@@ -4602,10 +4621,7 @@
     // headgear: a ballistic helmet with a cover, a boonie hat for scouts, a full mask for heavies
     if (undead) {
       const hair = M(T.hair, .95, 0);
-      if (SG) {   // a ragged crop over the realistic skull
-        add(head, sphG(.124, 12, 8, Math.PI * 2, Math.PI / 2.2), hair, 0, .045, -.008).scale.set(.83, .82, 1);
-        add(head, rrG(.04, .07, .045, .018), hair, .045, .13, .03, 0, 0, .4);
-      } else {
+      if (!SG) {   // (the realistic head has its hair painted on the scalp)
         add(head, sphG(.124, 12, 8, Math.PI * 2, Math.PI / 2.2), hair, .01, .05, -.03).scale.set(1, 1.05, 1.02);
         add(head, rrG(.05, .09, .05, .02), hair, .07, .15, .02, 0, 0, .4);
       }
