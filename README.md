@@ -453,6 +453,15 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Three new maps: Pirate Cove, Robot Foundry, Cartel Jungle
+
+Each new map has its own enemies, their own guns and its own ship. One ship sails, one drives on land and one flies.
+
+- **Pirate Cove: pirates and a galleon.** A tropical cove with palms and wrecks. Pirates wear sashes, bandoliers and gold earrings, with tricorn hats or bandanas, and most have full beards and moustaches; the captains wear long coats. They fire **blunderbusses** (a wide spray of shot), scouts carry pistols, and the captains, **Captain Ironhook** and **Captain Blackheart**, carry brass **swivel guns**. A three-masted **pirate galleon** sails the bay under full canvas, flying the skull and crossbones, and fires broadsides of cannonballs from whichever side faces you. Sink it and another sails in.
+- **Robot Foundry: robots and a tank.** A dark, red-skied industrial yard with silos, containers and tanks, and no sea. The robots have smooth helmet heads with a chrome face plate, a vent grille, a dark visor band and glowing eyes, plus painted armour panels with seams and rivets, rubber joints, a glowing chest core and an antenna. They fire **laser blasters** (red bolts in threes); heavies carry a **laser cannon**, and the bosses are the **Titan Unit** and the **Command Unit**. A **tank drives across the field on its tracks**, following the ground, kicking up dust and smoke. It turns its turret to fire shells at you, lets robots out of its back hatch, and shoves you aside if you get in its way. Knocked out, it burns and the wreck sinks away.
+- **Cartel Jungle: mercenaries and an attack helicopter.** Dense jungle with ruins. Cartel gunmen in tiger-stripe camo carry regular guns; the bosses are **El Jefe** and **The Enforcer**. An **attack helicopter flies** low circles over the field, nose-down and banking into its turns. It ripples rockets off its stub wings, rakes you with its chin gun and hovers to drop gunmen down ropes. Shot down, it spins out of the sky and explodes.
+- **Made in Blender.** The robot body is built in Blender from the same base mesh as everyone else (`tools/creatures/make_creature.py`), with its head shaped into a squared-off helmet. The galleon (planked hull, gun ports, three masts with bellied sails), the tank (tracks, road wheels, a separate turret and gun), the helicopter (separate main and tail rotors), the laser blaster, the blunderbuss and the tricorn are all modelled in Blender (`tools/props/make_props2.py`).
+
 ## Aliens, sea monsters, saucers and submarines
 
 Each map now has its own enemies and its own ship.
