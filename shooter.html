@@ -430,7 +430,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-06.2330</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-07.1200</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -5999,36 +5999,43 @@
   // can be sunk: it soaks up a lot of fire, burns, breaks up in a chain of blasts
   // and goes down by the stern. A replacement steams in from the horizon later.
   const ships = [];
-  const SHIP_L = 30, SHIP_B = 5.4, SHIP_HP = 160;
+  const SHIP_L = 34, SHIP_B = 4.3, SHIP_HP = 160;   // a destroyer's slender 8 : 1
   const shipMats = (() => {
-    const steel = new THREE.MeshStandardMaterial({ color: 0x6e767e, roughness: .62, metalness: .45 });
-    const steelD = new THREE.MeshStandardMaterial({ color: 0x4e555c, roughness: .7, metalness: .45 });
-    const deck = new THREE.MeshStandardMaterial({ color: 0x3e4247, roughness: .9, metalness: .2 });
-    const hull = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .6, metalness: .4 });
+    // haze grey paint: flat, a little chalky, not shiny metal
+    const steel = new THREE.MeshStandardMaterial({ color: 0x6c737a, roughness: .78, metalness: .1 });
+    const steelD = new THREE.MeshStandardMaterial({ color: 0x50565c, roughness: .8, metalness: .1 });
+    const deck = new THREE.MeshStandardMaterial({ color: 0x3e4247, roughness: .92, metalness: .05 });
+    const hull = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72, metalness: .1 });
     const glass = new THREE.MeshStandardMaterial({ color: 0x0c1418, roughness: .08, metalness: .9, emissive: 0x0a1820, emissiveIntensity: .6 });
     const black = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: .7, metalness: .3 });
     const orange = new THREE.MeshStandardMaterial({ color: 0xe0601e, roughness: .6 });
     const white = new THREE.MeshStandardMaterial({ color: 0xe8eaec, roughness: .6 });
-    return { steel, steelD, deck, hull, glass, black, orange, white };
+    const rib = new THREE.MeshStandardMaterial({ color: 0x2a2c2e, roughness: .85 });
+    return { steel, steelD, deck, hull, glass, black, orange, white, rib };
   })();
-  // the hull: lofted from cross-sections, with a raked, knife-edged bow, a flared
-  // forecastle and a square transom. Grey topsides, a black boot-top along the
-  // waterline and red antifouling below it.
+  // the hull's half-beam along its length (t = 0 at the transom, 1 at the stem): full
+  // amidships, narrowing a little to the square transom and finely to the bow
+  const shipW = t => SHIP_B / 2 * (t > .5 ? Math.pow(Math.max(0, Math.cos((t - .5) / .5 * Math.PI / 2)), .85) : t < .12 ? .86 + t * 1.15 : 1);
+  // the hull: lofted from cross-sections, long and slender, with a raked, knife-edged
+  // stem, a flared forecastle that rises toward the bow, a knuckle down the sides and a
+  // square transom. Grey topsides, a black boot-top along the waterline, red below it.
   const shipHullGeo = (() => {
-    const N = 26, P = [], C = [], idx = [], deckY = 2.3, keel = -2.1;
-    const grey = new THREE.Color(0xd4d8dc), boot = new THREE.Color(0x1a1c1e), red = new THREE.Color(0x7a2a22);   // the plating texture carries the grey
-    const prof = [[1, deckY + .5], [1.06, 1.2], [1.04, .52], [1.035, .45], [1, .1], [.97, -.24], [.95, -.31], [.86, -.9], [.5, -1.8], [0, keel]];   // half-width factor, height
+    const N = 52, P = [], C = [], idx = [], deckY = 2.1, keel = -1.9;
+    const grey = new THREE.Color(0xa9afb5), boot = new THREE.Color(0x1a1c1e), red = new THREE.Color(0x7a2a22);   // the plating texture carries the grey
+    const prof = [[1, deckY], [1.04, 1.25], [1.02, .55], [1.01, .45], [.99, .1], [.97, -.24], [.95, -.31], [.86, -.85], [.5, -1.65], [0, keel]];   // half-width factor, height
     const rows = [];
     for (let i = 0; i <= N; i++) {
-      const t = i / N, z = (t - .5) * SHIP_L;                  // t = 1 at the bow
-      let w = SHIP_B / 2 * (t > .62 ? Math.pow(Math.cos((t - .62) / .38 * Math.PI / 2), .8) : t < .06 ? .82 + t * 3 : 1);
-      const sheer = t > .7 ? (t - .7) * 2.4 : 0;               // the deck rises toward the bow
-      const rake = t > .9 ? (t - .9) * 10 : 0;                 // the stem rakes forward at the top
+      const t = i / N, z = (t - .5) * SHIP_L;
+      const w = Math.max(shipW(t), .02);
+      const sm = x => x * x * (3 - 2 * x), sheer = .95 * Math.pow(sm(Math.min(1, Math.max(0, (t - .5) / .5))), 1.6);   // the deck rises to the bow
+      const flare = 1 + .16 * sm(Math.min(1, Math.max(0, (t - .55) / .4)));                                                  // and the forecastle flares out
+      const rake = t > .88 ? (t - .88) * 9 : 0;                // the top of the stem leans out, the forefoot cuts back
       const row = [];
       for (let k = 0; k < prof.length; k++) {
-        const [f, y] = prof[k], yy = k === 0 ? y + sheer : y;
-        const lift = (1 - k / (prof.length - 1)) * rake;       // the top of the stem leans out, the forefoot cuts back
-        row.push([w * f, yy, z + lift - (k > 4 && t > .9 ? (t - .9) * 6 : 0)]);
+        const [f, y] = prof[k], up = 1 - k / (prof.length - 1);
+        const yy = y + (k === 0 ? sheer : k === 1 ? sheer * .6 : 0);
+        const ff = f * (k < 2 ? flare : 1 + (flare - 1) * .3);
+        row.push([w * ff, yy, z + up * rake - (k > 4 && t > .88 ? (t - .88) * 5 : 0)]);
       }
       rows.push(row);
     }
@@ -6082,16 +6089,18 @@
     // scuppers and a band of grime along the waterline
     const hull = canvasTex(512, 256, (g, w, h) => {
       g.fillStyle = "#8a9098"; g.fillRect(0, 0, w, h);
+      // plate courses with faint welded seams, a few plates a shade off from repainting
       for (let y = 0; y < h; y += 32) {
-        g.fillStyle = `rgba(0,0,0,${rnd(.04, .1)})`; g.fillRect(0, y, w, 2);
-        for (let x = (y / 32 % 2) * 40; x < w; x += 80 + rnd(-10, 10)) { g.fillStyle = "rgba(0,0,0,.08)"; g.fillRect(x, y, 2, 32); }
-        for (let x = 0; x < w; x += 80) { g.fillStyle = `rgba(255,255,255,${rnd(0, .05)})`; g.fillRect(x + 4, y + 4, 70, 24); }
+        g.fillStyle = `rgba(0,0,0,${rnd(.03, .06)})`; g.fillRect(0, y, w, 1);
+        for (let x = (y / 32 % 2) * 48; x < w; x += 96 + rnd(-8, 8)) { g.fillStyle = "rgba(0,0,0,.05)"; g.fillRect(x, y, 1, 32); }
+        for (let x = 0; x < w; x += 96) if (Math.random() < .35) { g.fillStyle = `rgba(${Math.random() < .5 ? "255,255,255" : "0,0,0"},${rnd(.015, .04)})`; g.fillRect(x + 2, y + 2, 92, 29); }
       }
-      for (let i = 0; i < 26; i++) {
-        const x = rnd(0, w), y0 = rnd(h * .2, h * .6), len = rnd(30, 120), gr = g.createLinearGradient(0, y0, 0, y0 + len);
-        gr.addColorStop(0, "rgba(120,60,30,.45)"); gr.addColorStop(1, "rgba(120,60,30,0)"); g.fillStyle = gr; g.fillRect(x, y0, rnd(2, 5), len);
+      // scuppers along the deck edge, with a few thin weathering streaks below them
+      for (let x = 20; x < w; x += rnd(40, 70)) {
+        g.fillStyle = "rgba(20,20,20,.55)"; g.fillRect(x, h * .08, 4, 3);
+        if (Math.random() < .45) { const len = rnd(12, 46), gr = g.createLinearGradient(0, h * .09, 0, h * .09 + len); gr.addColorStop(0, "rgba(95,70,50,.22)"); gr.addColorStop(1, "rgba(95,70,50,0)"); g.fillStyle = gr; g.fillRect(x + 1, h * .09, 2, len); }
       }
-      const gb = g.createLinearGradient(0, h * .75, 0, h); gb.addColorStop(0, "rgba(40,40,30,0)"); gb.addColorStop(1, "rgba(40,40,30,.35)"); g.fillStyle = gb; g.fillRect(0, h * .75, w, h * .25);
+      const gb = g.createLinearGradient(0, h * .8, 0, h); gb.addColorStop(0, "rgba(40,45,35,0)"); gb.addColorStop(1, "rgba(40,45,35,.18)"); g.fillStyle = gb; g.fillRect(0, h * .8, w, h * .2);
     });
     // the deck: dark non-skid with painted walkways
     const deck = canvasTex(256, 256, (g, w, h) => {
@@ -6105,7 +6114,17 @@
       g.fillStyle = "rgba(240,240,235,.9)"; g.font = "bold 120px Arial"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("H", w / 2, h / 2 + 6);
       g.fillStyle = "rgba(240,200,60,.9)"; g.fillRect(0, h * .9, w, 6);
     });
-    return { hull, deck, pad };
+    // the superstructure's paint: welded panel seams, a faint run of weathering below
+    // them and the odd touched-up patch, all light enough to stay haze grey
+    const panel = canvasTex(256, 256, (g, w, h) => {
+      g.fillStyle = "#ffffff"; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 18; i++) { g.fillStyle = `rgba(${Math.random() < .5 ? "0,0,0" : "255,255,255"},${rnd(.02, .05)})`; g.fillRect(rnd(0, w), rnd(0, h), rnd(20, 60), rnd(14, 40)); }
+      for (let y = 0; y < h; y += 64) { g.fillStyle = "rgba(0,0,0,.09)"; g.fillRect(0, y, w, 1); g.fillStyle = "rgba(255,255,255,.06)"; g.fillRect(0, y + 1, w, 1); }
+      for (let x = 0; x < w; x += 64) for (let y = 0; y < h; y += 64) { g.fillStyle = "rgba(0,0,0,.06)"; g.fillRect(x + (y / 64 % 2) * 32, y, 1, 64); }
+      for (let i = 0; i < 14; i++) { const x = rnd(0, w), y0 = Math.floor(rnd(0, 4)) * 64 + 2, len = rnd(10, 40), gr = g.createLinearGradient(0, y0, 0, y0 + len); gr.addColorStop(0, "rgba(80,70,60,.12)"); gr.addColorStop(1, "rgba(80,70,60,0)"); g.fillStyle = gr; g.fillRect(x, y0, 1.5, len); }
+    }, 2, 1);
+    shipMats.steel.map = panel;
+    return { hull, deck, pad, panel };
   })();
   function buildShip(num) {
     const M = shipMats, g = new THREE.Group(), body = new THREE.Group(); g.add(body);
@@ -6124,81 +6143,98 @@
     const deckMat = M.deck.clone(); deckMat.map = SHIP_TEX.deck; deckMat.color.setHex(0xffffff);
     add(H.deck, deckMat, 0, dY, 0).castShadow = false;
     // the pennant number on the bow, and the hull's half-beam to fix things to the plating
-    const halfB = t => SHIP_B / 2 * (t > .62 ? Math.pow(Math.cos((t - .62) / .38 * Math.PI / 2), .8) : 1);
+    const halfB = t => shipW(t) * (1 + .16 * Math.min(1, Math.max(0, (t - .55) / .4)));
+    const deckAt = z => { const t = z / SHIP_L + .5; return dY + .95 * Math.pow(Math.min(1, Math.max(0, (t - .5) / .5)), 2) * (3 - 2 * Math.min(1, Math.max(0, (t - .5) / .5))); };
     for (const sx of [-1, 1]) {
-      const num1 = add(new THREE.PlaneGeometry(2.2, 1.1), new THREE.MeshBasicMaterial({ map: hullNumTex(num), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), sx * (halfB(.8) * 1.06 + .03), 1.75, SHIP_L * .3);
-      num1.rotation.y = sx * Math.PI / 2 - sx * .22; num1.castShadow = false;
-      add(boxG(.1, .5, .5), M.black, sx * (halfB(.88) * 1.06), 1.4, SHIP_L * .38).rotation.y = -sx * .35;   // anchor
+      const num1 = add(new THREE.PlaneGeometry(1.8, .9), new THREE.MeshBasicMaterial({ map: hullNumTex(num), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), sx * (halfB(.78) + .04), 1.9, SHIP_L * .28);
+      num1.rotation.y = sx * Math.PI / 2 - sx * .2; num1.castShadow = false;
+      add(new THREE.CylinderGeometry(.16, .16, .1, 10), M.black, sx * (halfB(.9) + .01), 2.15, SHIP_L * .4).rotation.z = Math.PI / 2;   // hawse pipe
+      add(boxG(.08, .4, .36), M.black, sx * (halfB(.9) + .03), 1.85, SHIP_L * .4).rotation.y = -sx * .3;                                   // anchor
     }
-    // the stern's helicopter pad
-    const pad = add(new THREE.PlaneGeometry(4.2, 4.2), new THREE.MeshBasicMaterial({ map: SHIP_TEX.pad, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 0, dY + .02, -SHIP_L / 2 + 3.2);
+    // the stern's flight deck: pad markings, and a low safety net rail round its edge
+    const pad = add(new THREE.PlaneGeometry(3.6, 3.6), new THREE.MeshBasicMaterial({ map: SHIP_TEX.pad, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 0, dY + .02, -SHIP_L / 2 + 2.9);
     pad.rotation.x = -Math.PI / 2; pad.castShadow = false;
-    // superstructure: a forward deckhouse with the bridge on top, an aft deckhouse with the hangar
-    block(4.4, 2.3, 7.4, .86, M.steel, 0, dY + 1.15, 3.2);
-    block(3.8, 1.9, 4.6, .82, M.steel, 0, dY + 3.25, 4.2);
-    add(boxG(3.3, .32, .06), M.glass, 0, dY + 3.55, 6.4).rotation.x = -.32;                                     // bridge window band
-    for (const sx of [-1, 1]) add(boxG(.06, .3, 2.6), M.glass, sx * 1.6, dY + 3.5, 4.7).rotation.z = sx * .2;
-    add(boxG(5.4, .1, 1.3), M.steelD, 0, dY + 4.22, 5.6);                                                       // bridge wings
-    for (const sx of [-1, 1]) add(boxG(.12, .12, .12), new THREE.MeshBasicMaterial({ color: sx > 0 ? 0x30ff60 : 0xff3030 }), sx * 2.7, dY + 4.32, 5.6);   // running lights
-    // the radar arrays: flat octagonal faces on the bridge block, two looking forward
-    const spy = new THREE.CylinderGeometry(.85, .85, .1, 8);
-    for (const sx of [-1, 1]) { const f = add(spy, M.steelD, sx * 1.05, dY + 3.2, 6.25); f.rotation.set(Math.PI / 2 - .3, 0, 0); f.rotation.order = "YXZ"; f.rotation.y = sx * .78; }
-    block(3.6, 2.5, 6.6, .9, M.steel, 0, dY + 1.25, -6.6);                                                       // hangar
-    add(boxG(3.2, 2.1, .06), M.steelD, 0, dY + 1.05, -9.92);                                                     // hangar door
-    for (const sx of [-1, 1]) { const f = add(spy, M.steelD, sx * 1.4, dY + 1.7, -4.2); f.rotation.set(Math.PI / 2 - .3, 0, 0); f.rotation.order = "YXZ"; f.rotation.y = sx * 2.36; }
-    // twin funnels, raked aft, with black caps
-    for (const fz of [-.6, -2.6]) {
-      const fun = block(1.3, 2.8, 1.9, .82, M.steel, 0, dY + 3.4, fz); fun.rotation.x = -.12;
-      add(boxG(1.15, .25, 1.6), M.black, 0, dY + 4.88, fz - .2);
-    }
-    // mast: a slim tapered lattice with yardarms, antennas and the sweeping radar
-    const mast = new THREE.Group(); mast.position.set(0, dY + 4.2, 3.6); body.add(mast);
-    block(1.2, 4.5, 1.2, .3, M.steelD, 0, 2.25, 0, mast);
-    add(boxG(3.6, .08, .08), M.steelD, 0, 3.6, 0, mast); add(boxG(2.4, .07, .07), M.steelD, 0, 4.4, 0, mast);
-    for (const sx of [-1.6, -.9, .9, 1.6]) add(cylG(.02, .02, .7, 4), M.steelD, sx, 3.95, 0, mast);
-    add(cylG(.03, .02, 2.2, 5), M.steelD, 0, 5.5, 0, mast);
-    const radar = new THREE.Group(); radar.position.y = 4.85; mast.add(radar);
-    add(boxG(2.4, .5, .12), M.steelD, 0, 0, 0, radar); add(boxG(2.6, .08, .5), M.steelD, 0, -.28, -.1, radar);
-    add(new THREE.SphereGeometry(.42, 12, 8), M.white, 0, 3.2, -.75, mast);                                       // satellite dome
-    // missile hatches set into the deck, fore and aft
-    for (const [vz, rows] of [[9.5, 4], [-3.6, 3]]) {
-      add(boxG(2.4, .14, rows * .55 + .2), M.steelD, 0, dY + .07, vz);
-      for (let r = 0; r < rows; r++) for (let c = 0; c < 4; c++) add(boxG(.44, .03, .44), M.deck, -.84 + c * .56, dY + .155, vz - (rows - 1) * .275 + r * .55);
-    }
-    // close-in weapons on the hangar roof and ahead of the bridge
-    for (const [cx, cy2, cz] of [[0, dY + 2.55, -7.8], [0, dY + 2.35, 6.9]]) {
-      add(new THREE.CylinderGeometry(.5, .6, .8, 12), M.white, cx, cy2 + .4, cz); add(new THREE.SphereGeometry(.5, 12, 8, 0, 6.3, 0, 1.6), M.white, cx, cy2 + .8, cz);
-      add(cylG(.04, .04, 1, 6), M.black, cx, cy2 + .55, cz + .55).rotation.x = Math.PI / 2;
-    }
-    // boats in their davits and life-raft canisters along the rails
+
+    // ---- the superstructure: one long deckhouse with sloped, stealthy sides, the bridge
+    // stepped up at its forward end, the stack amidships and the hangar aft ----
+    block(3.5, 2, 9.4, .9, M.steel, 0, dY + 1, 1.6);                                     // the forward deckhouse
+    block(3.1, 1.4, 4, .86, M.steel, 0, dY + 2.7, 4.1);                                 // the bridge
+    add(boxG(2.6, .26, .05), M.glass, 0, dY + 2.95, 6.03).rotation.x = -.26;           // the bridge windows, raked
     for (const sx of [-1, 1]) {
-      add(new THREE.CylinderGeometry(.42, .42, 3.4, 10), M.orange, sx * 2.35, dY + 2.55, -2.4).rotation.x = Math.PI / 2;
-      add(boxG(.8, .25, 3.2), M.steelD, sx * 2.35, dY + 2.2, -2.4);
-      for (const dz of [-3.6, -4.4, 1.6]) add(new THREE.CylinderGeometry(.32, .32, .9, 10), M.white, sx * 2.05, dY + .45, dz).rotation.z = Math.PI / 2;
+      add(boxG(.05, .24, 1.6), M.glass, sx * 1.36, dY + 2.95, 4.9).rotation.z = sx * .16;
+      add(boxG(.7, .08, 1), M.steelD, sx * 1.75, dY + 3.38, 5.2);                      // bridge wings
+      add(boxG(.08, .08, .08), new THREE.MeshBasicMaterial({ color: sx > 0 ? 0x30ff60 : 0xff3030 }), sx * 2.08, dY + 3.46, 5.2);   // running lights
+      for (let k = 0; k < 3; k++) add(boxG(.03, .5, .3), M.steelD, sx * 1.66, dY + .7, -1.2 + k * 2.2).rotation.z = sx * .1;      // watertight doors
     }
-    // guns: a faceted, stealthy main gun forward and a second mount aft, each with one long barrel
+    // the phased-array radar faces: flat octagons on the bridge's angled corners, two forward, two aft
+    const spy = new THREE.CylinderGeometry(.6, .6, .05, 8), spyRim = new THREE.CylinderGeometry(.66, .66, .04, 8);
+    const face = (x, y, z, tilt, yaw) => { for (const [geo, mat, off] of [[spyRim, M.steel, 0], [spy, M.black, .03]]) { const f = add(geo, mat, x + Math.sin(yaw) * off, y, z + Math.cos(yaw) * off); f.rotation.order = "YXZ"; f.rotation.set(Math.PI / 2 - tilt, yaw, 0); } };
+    for (const sx of [-1, 1]) face(sx * .76, dY + 2.55, 6.14, .2, sx * .32);
+    for (const sx of [-1, 1]) face(sx * .9, dY + 1.15, -3.2, .16, Math.PI - sx * .32);
+    // the stack: a low, angular uptake with two exhaust outlets and their grilles
+    const stack = block(2.2, 1.9, 3.4, .78, M.steel, 0, dY + 2.85, -1.4); stack.rotation.x = -.06;
+    for (const sz of [-.6, -2.2]) { add(boxG(.95, .14, .9), M.black, 0, dY + 3.86, sz); add(boxG(1.05, .05, 1), M.steelD, 0, dY + 3.8, sz); }
+    // the hangar, its roller door, and a small deckhouse step down to the flight deck
+    block(3.4, 2.1, 6.4, .92, M.steel, 0, dY + 1.05, -7.2);
+    add(boxG(2.6, 1.7, .05), M.steelD, 0, dY + .85, -10.42);
+    for (let k = 0; k < 7; k++) add(boxG(2.6, .02, .06), M.black, 0, dY + .15 + k * .24, -10.45);
+    // the mast: a tapering pyramid of four legs with platforms, yardarms, antennas,
+    // the turning air-search radar on top and a small radome on a bracket
+    const mast = new THREE.Group(); mast.position.set(0, dY + 3.4, 2.6); body.add(mast);
+    const leg = (x0, z0, x1, z1, y0, y1, r) => { const a = new THREE.Vector3(x0, y0, z0), b2 = new THREE.Vector3(x1, y1, z1), m = add(cylG(r, r, a.distanceTo(b2), 5), M.steelD, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, mast); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b2.clone().sub(a).normalize()); };
+    for (const [ax, az] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) leg(ax * .7, az * .7, ax * .14, az * .14, 0, 4.2, .045);
+    for (const [y, r] of [[1.4, .5], [2.8, .3]]) for (const [ax, az, bx, bz] of [[-1, 1, 1, 1], [1, 1, 1, -1], [1, -1, -1, -1], [-1, -1, -1, 1]]) leg(ax * r, az * r, bx * r, bz * r, y, y, .03);
+    add(boxG(1.3, .06, 1.3), M.steelD, 0, 1.4, 0, mast); add(boxG(.9, .06, .9), M.steelD, 0, 2.8, 0, mast);
+    add(boxG(3, .06, .06), M.steelD, 0, 3.1, 0, mast); add(boxG(2, .05, .05), M.steelD, 0, 3.8, 0, mast);
+    for (const ax of [-1.3, -.7, .7, 1.3]) add(cylG(.015, .015, .5, 4), M.steelD, ax, 3.35, 0, mast);
+    add(cylG(.025, .012, 1.6, 5), M.steelD, 0, 5.1, 0, mast);
+    add(new THREE.SphereGeometry(.26, 12, 8), M.white, .62, 1.75, -.15, mast); add(boxG(.4, .05, .3), M.steelD, .5, 1.5, -.15, mast);
+    const radar = new THREE.Group(); radar.position.y = 4.35; mast.add(radar);
+    add(boxG(1.9, .34, .08), M.steelD, 0, 0, 0, radar); add(boxG(2, .05, .36), M.steelD, 0, -.2, -.06, radar);
+    // vertical launch cells set flush in the foredeck, and a second bank aft of the stack
+    for (const [vz, nr] of [[7.6, 5], [-4.15, 2]]) {
+      const y0 = deckAt(vz); add(boxG(2, .1, nr * .46 + .16), M.steelD, 0, y0 + .05, vz);
+      for (let r = 0; r < nr; r++) for (let c = 0; c < 4; c++) add(boxG(.38, .025, .38), M.deck, -.69 + c * .46, y0 + .11, vz - (nr - 1) * .23 + r * .46);
+    }
+    // close-in weapons: white domes on pedestals, ahead of the bridge and on the hangar roof
+    for (const [cy2, cz] of [[dY + 2, 6.1], [dY + 2.1, -5]]) {
+      add(new THREE.CylinderGeometry(.3, .38, .45, 12), M.steelD, 0, cy2 + .22, cz);
+      add(new THREE.CylinderGeometry(.27, .3, .45, 12), M.white, 0, cy2 + .67, cz); add(new THREE.SphereGeometry(.27, 12, 8, 0, 6.3, 0, 1.6), M.white, 0, cy2 + .9, cz);
+      add(cylG(.025, .03, .7, 6), M.black, 0, cy2 + .55, cz + .4).rotation.x = Math.PI / 2;
+    }
+    // rigid inflatable boats in recesses either side of the stack, and life-raft canisters on racks
+    for (const sx of [-1, 1]) {
+      add(boxG(.62, .3, 2.2), M.steelD, sx * 1.95, dY + 2.15, -2.6);                     // the hull of the boat
+      for (const ox of [-.27, .27]) add(cylG(.13, .13, 2.1, 8), M.rib, sx * 1.95 + ox, dY + 2.33, -2.6).rotation.x = Math.PI / 2;   // its tubes
+      add(boxG(.1, .7, .1), M.steelD, sx * 1.95, dY + 1.85, -1.6); add(boxG(.1, .7, .1), M.steelD, sx * 1.95, dY + 1.85, -3.6);
+      for (const dz of [-4.9, -5.6, -9.2]) add(new THREE.CylinderGeometry(.2, .2, .62, 10), M.white, sx * 1.83, dY + .3, dz).rotation.z = Math.PI / 2;
+    }
+    // guns: a faceted, stealthy main gun on the foredeck with one long barrel, and a
+    // lighter mount on the hangar roof covering astern
     const mkTurret = (z, flip, big) => {
-      const s2 = big ? 1 : .75, base = new THREE.Group(); base.position.set(0, dY + (flip ? 2.5 : 0), z); body.add(base);
-      add(new THREE.CylinderGeometry(1.3 * s2, 1.45 * s2, .3, 16), M.steelD, 0, .15, 0, base);
-      const yawG = new THREE.Group(); yawG.position.y = .3; base.add(yawG);
-      const hs = block(2.2 * s2, 1.1 * s2, 3 * s2, .62, M.steel, 0, .55 * s2, -.25 * s2, yawG);
-      add(boxG(.5 * s2, .4 * s2, .6 * s2), M.steelD, 0, .5 * s2, 1.05 * s2, yawG);                          // the gun's mantlet
-      const pitchG = new THREE.Group(); pitchG.position.set(0, .55 * s2, 1.3 * s2); yawG.add(pitchG);
-      add(cylG(.1 * s2, .13 * s2, 4.2 * s2, 10), M.steelD, 0, 0, 2.1 * s2, pitchG).rotation.x = Math.PI / 2;
-      add(cylG(.15 * s2, .15 * s2, .4 * s2, 10), M.steelD, 0, 0, 4.1 * s2, pitchG).rotation.x = Math.PI / 2;   // muzzle
-      const mz = new THREE.Object3D(); mz.position.set(0, 0, 4.4 * s2); pitchG.add(mz);
+      const s2 = big ? 1 : .7, base = new THREE.Group(); base.position.set(0, flip ? dY + 2.1 : deckAt(z), z); body.add(base);
+      add(new THREE.CylinderGeometry(.85 * s2, .95 * s2, .22, 16), M.steelD, 0, .11, 0, base);
+      const yawG = new THREE.Group(); yawG.position.y = .22; base.add(yawG);
+      block(1.4 * s2, .78 * s2, 2.1 * s2, .58, M.steel, 0, .39 * s2, -.15 * s2, yawG);
+      add(boxG(.36 * s2, .3 * s2, .4 * s2), M.steelD, 0, .38 * s2, .78 * s2, yawG);                       // the gun's mantlet
+      const pitchG = new THREE.Group(); pitchG.position.set(0, .4 * s2, .95 * s2); yawG.add(pitchG);
+      add(cylG(.055 * s2, .075 * s2, 3 * s2, 10), M.steelD, 0, 0, 1.5 * s2, pitchG).rotation.x = Math.PI / 2;
+      add(cylG(.085 * s2, .085 * s2, .3 * s2, 10), M.steelD, 0, 0, 2.95 * s2, pitchG).rotation.x = Math.PI / 2;   // muzzle
+      const mz = new THREE.Object3D(); mz.position.set(0, 0, 3.15 * s2); pitchG.add(mz);
       yawG.rotation.y = flip ? Math.PI : 0;
-      return { base, yawG, pitchG, muzzles: [mz], cd: rnd(2, 5), flip };
+      return { base, yawG, pitchG, muzzles: [mz], cd: rnd(2, 5), flip, rest: .95 * s2 };
     };
-    const turrets = [mkTurret(10.6, false, true), mkTurret(-9.3, true, false)];
+    const turrets = [mkTurret(10.3, false, true), mkTurret(-8.8, true, false)];
+    // the jack staff at the bow
+    add(cylG(.025, .025, 1.2, 5), M.steelD, 0, deckAt(SHIP_L / 2 - .7) + .6, SHIP_L / 2 - .7);
     // railings along the deck edge, as one line set
     const rp = [];
     H.rows.forEach((r, i) => { if (i === 0) return; const [x0, , z0] = H.rows[i - 1][0], [x1, , z1] = r[0]; for (const sx of [-1, 1]) { rp.push(sx * x0 * .97, dY + .9, z0, sx * x1 * .97, dY + .9, z1); if (i % 2) rp.push(sx * x1 * .97, dY, z1, sx * x1 * .97, dY + .9, z1); } });
     const rg = new THREE.BufferGeometry(); rg.setAttribute("position", new THREE.Float32BufferAttribute(rp, 3));
     body.add(new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0x9aa0a6 })));
     // ensign at the stern
-    add(new THREE.CylinderGeometry(.04, .04, 2.4, 5), M.steelD, 0, dY + 1.2, -SHIP_L / 2 + .6);
-    const flag = add(new THREE.PlaneGeometry(1.3, .8), new THREE.MeshStandardMaterial({ color: 0xb02020, side: THREE.DoubleSide, roughness: .8 }), .66, dY + 2.05, -SHIP_L / 2 + .6); flag.rotation.y = Math.PI / 2;
+    add(new THREE.CylinderGeometry(.03, .03, 1.8, 5), M.steelD, 0, dY + .9, -SHIP_L / 2 + .4);
+    const flag = add(new THREE.PlaneGeometry(.9, .55), new THREE.MeshStandardMaterial({ color: 0xb02020, side: THREE.DoubleSide, roughness: .8 }), .46, dY + 1.5, -SHIP_L / 2 + .4); flag.rotation.y = Math.PI / 2;
     // wake behind
     const wake = new THREE.Mesh(new THREE.PlaneGeometry(14, 46).rotateX(-Math.PI / 2), wakeMat.clone());
     wake.material.uniforms.uTime = WATER_U.uTime; wake.material.uniforms.uLight = WATER_U.uLight;
@@ -6209,13 +6245,13 @@
     bow.position.set(0, .05, SHIP_L / 2 - 3.5); bow.rotation.y = Math.PI; bow.renderOrder = 2; g.add(bow);
     // what bullets and rockets hit: one box around the hull and one around the superstructure
     const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
-    const p1 = new THREE.Mesh(boxG(SHIP_B, 4.6, SHIP_L * .96), proxyMat); p1.position.y = .3; g.add(p1);
-    const p2 = new THREE.Mesh(boxG(4.2, 5, 16), proxyMat); p2.position.set(0, dY + 2.4, -1.5); g.add(p2);
+    const p1 = new THREE.Mesh(boxG(SHIP_B, 4.4, SHIP_L * .96), proxyMat); p1.position.y = .3; g.add(p1);
+    const p2 = new THREE.Mesh(boxG(3.6, 4, 17), proxyMat); p2.position.set(0, dY + 2, -1.6); g.add(p2);
     // the parts that move are kept out of the hull's merge, then each merged on its own
     const moving = [mast, radar, ...turrets.flatMap(t => [t.base, t.yawG, t.pitchG])];
     moving.forEach(o => { o.userData.noMerge = true; });
     [body, ...moving].forEach(gp => mergeChildren(gp, true, true));
-    return { g, body, radar, turrets, wake, bow, flag, proxies: [p1, p2] };
+    return { g, body, radar, turrets, wake, bow, flag, proxies: [p1, p2], stackP: new THREE.Vector3(0, dY + 4, -1.4) };
   }
   function spawnShip(fromHorizon) {
     if (!WATER_ON || mode !== "survival") return;
@@ -6300,7 +6336,7 @@
       s.radar.rotation.y += dt * 2.2;
       s.flag.rotation.y = Math.PI / 2 + Math.sin(t * 6) * .25;
       s.wake.material.uniforms.uK.value = Math.min(1, sp / 2.5); if (s.bow) s.bow.material.uniforms.uK.value = Math.min(1, sp / 2.5) * .8;
-      if (Math.random() < dt * 1.4) puff(new THREE.Vector3(0, 7.6, -1.6).applyMatrix4(g.matrixWorld), 1.1, 3, 0x55524e, new THREE.Vector3(rnd(-.3, .3), 1.6, rnd(-.3, .3)), 2.4, .32);
+      if (Math.random() < dt * 1.4) puff(s.stackP.clone().applyMatrix4(g.matrixWorld), 1.1, 3, 0x55524e, new THREE.Vector3(rnd(-.3, .3), 1.6, rnd(-.3, .3)), 2.4, .32);
       if (Math.random() < dt * 2) splash(new THREE.Vector3(rnd(-1.2, 1.2), 0, SHIP_L / 2 - .5).applyMatrix4(g.matrixWorld), .5);
       if (s.burn && Math.random() < dt * 6) { const p = new THREE.Vector3(rnd(-1.5, 1.5), 3, rnd(-9, 9)).applyMatrix4(g.matrixWorld); puff(p, 1.3, 2.5, Math.random() < .3 ? 0xff8a2a : 0x2a2724, new THREE.Vector3(0, 2.2, 0), 2.4, .5); }
       // health bar
@@ -6322,7 +6358,7 @@
         const D = Math.hypot(local.x, local.z);
         tr.pitchG.rotation.x = -clamp(.05 + D * .004, 0, .5);
         tr.kick = Math.max(0, (tr.kick || 0) - dt * 3);
-        tr.pitchG.position.z = 1.05 - tr.kick * .25;
+        tr.pitchG.position.z = tr.rest - tr.kick * .2;
         tr.cd -= dt;
         if (tr.cd <= 0 && player.alive && active() && dist < 120 && Math.abs(dy) < .08 && !blocked) {
           tr.cd = rnd(4.5, 7) - Math.min(2, player.wave * .12);
@@ -6336,7 +6372,7 @@
         const n = 1 + (Math.random() * 2 | 0);
         for (let k = 0; k < n; k++) later(k * .8, () => {
           if (!ships.includes(s) || s.sink) return;
-          const side = Math.random() < .5 ? 1 : -1, p = new THREE.Vector3(side * 4.5, 0, rnd(-6, 6)).applyMatrix4(s.g.matrixWorld);
+          const side = Math.random() < .5 ? 1 : -1, p = new THREE.Vector3(side * (SHIP_B / 2 + 1.2), 0, rnd(-6, 6)).applyMatrix4(s.g.matrixWorld);
           const e = spawnEnemy(); if (!e) return;
           e.g.position.set(p.x, 0, p.z); e.by = enemyFloor(e); e.g.position.y = e.by; splash(p, 1);
         });
