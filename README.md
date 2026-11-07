@@ -453,6 +453,27 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Every map's enemies and ship now match its biome
+
+All 28 maps were matched to where they are, so there are no soldiers in space and no tanks in a jungle:
+
+| Biome | Maps | Enemies | Ship |
+|---|---|---|---|
+| Off-world | Moon Base, Xeno World, Crystal Caverns | aliens with ray guns | flying saucer |
+| Industrial / high-tech | Robot Foundry, Scrapyard, Test Lab | robots with laser blasters | tank (on land) |
+| Neon city | Neon District | robots | attack helicopter |
+| Jungle / hot country | Overgrowth, Cartel Jungle, Ashfall, Dead Gulch | cartel mercenaries | attack helicopter |
+| City | Downtown | soldiers | attack helicopter |
+| Desert / canyon | Dustbowl, Red Rock Canyon | soldiers | tank (on land) |
+| Tropical coast | Palm Beach, Pirate Cove | pirates with blunderbusses | pirate galleon |
+| Sunken / reef / swamp | Coral Reef, Sunken Temple, Mushroom Grove | sea monsters with harpoon guns | submarine |
+| Graveyard | Hollow Graves | the undead | ghost ship |
+| Ordinary coasts, fields, snow | Meadow, Frostbite, Moonlight, Golden Hour, Harvest Hollow, Sugar Rush, Aurora Tundra, Iron Keep | soldiers | warship |
+
+- **New: the undead** (Hollow Graves). Green-skinned dead soldiers in rotted camouflage, with glowing eyes, ribs showing through their torn shirts, the odd rusty helmet and their old rifles; the bosses are **The Grave Lord** and **The Lich**.
+- **New: the ghost ship.** The pirate galleon, bleached pale and glowing a cold green from within, firing broadsides. Sunk, "it will rise again".
+- **No wrong enemies at the start.** The game used to show soldiers for the first moment of a match while the alien and robot bodies were still unpacking. Now every body and model unpacks at once, and the first wave waits for its own bodies.
+
 ## Three new maps: Pirate Cove, Robot Foundry, Cartel Jungle
 
 Each new map has its own enemies, their own guns and its own ship. One ship sails, one drives on land and one flies.
