@@ -453,6 +453,14 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Warships that look like real destroyers
+
+- **A destroyer's hull.** The hull is longer and much slimmer: 34 long by 4.3 wide, the slender 8 : 1 of a real destroyer, where it used to be a stubby 5.5 : 1. It's lofted from more stations, with a fine entry, a forecastle that flares and rises toward the raked stem, and a knuckle down the sides.
+- **Haze-grey paint, not shiny metal.** Flat, slightly chalky naval grey. The plating has faint welded seams, a few touched-up plates, scuppers along the deck edge with thin weathering streaks, and only a little grime at the waterline, not rust everywhere. The superstructure has its own subtle panel seams.
+- **One stealthy superstructure.** A long deckhouse with sloped sides and the bridge stepped up at its forward end, with raked windows and bridge wings. Framed phased-array radar faces sit on the bridge front and the deckhouse's after wall. Amidships is a low angular stack with two exhaust outlets, and aft a hangar with a roller door opening onto the flight deck.
+- **A real mast.** The cone mast is replaced by a tapering four-legged lattice with platforms, yardarms and antennas, the turning air-search radar on top and a radome on a bracket.
+- **Properly scaled kit.** A faceted main gun with one long, slim barrel on the foredeck and a lighter mount on the hangar roof. Vertical launch cells sit flush in the deck fore and aft, and close-in weapons stand on pedestals. Rigid inflatable boats sit in recesses by the stack in place of the big orange lifeboats, along with life-raft canisters, hawse pipes and anchors, a jack staff and a smaller ensign.
+
 ## Soldiers built from a real human model
 
 - **A real body, made in Blender.** Every soldier, ally and online player is now built on Blender Studio's realistic male base mesh, from their free Human Base Meshes bundle (CC0, sculpted by Dan Ulrich), in place of the hand-built shapes. It has real anatomy: a properly sculpted face with eyelids, a real nose, lips and ears, and real proportions for the neck, shoulders, arms, hands and legs.
