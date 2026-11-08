@@ -453,6 +453,11 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## A flashlight and an axe for everyone
+
+- **Flashlight.** You start every match with one, on every map, on land and underwater. Press **F** to switch it on or off (on a phone, the **LIGHT** button). It throws a warm spot of light ahead of you from under your right hand and turns itself on at the start of a match on dark maps: Moonlight, Crystal Caverns, Abyssal Trench, Hollow Graves and Neon District. It's always present and only its brightness changes, so switching it never makes the game stutter. Admin fly moved from F to **Shift+F**.
+- **Axe.** Every match starts with an axe in your inventory next to the pistol: switch to it with Z/X, the wheel or the GUN button. Click to swing: a chop down and across with a whoosh, landing a beat into the swing. It hits whatever is in front of you out to arm's length (about 2.9 m), and it's forgiving: a near miss on an enemy still connects. It does 3.2 damage per blow (1.6 times that to the head), about a soldier in three swings early on, and chops trees for wood like gunfire does. It never runs out and never reloads, and it's never in chests, the shop or the armory.
+
 ## Three more underwater maps
 
 - **Kelp Forest.** Sunlit green water over a sandy floor, crowded with towering stands of swaying kelp (some rising most of the way to the surface), with coral and boulders. It's great for ambushes: you lose sight of things fast among the stalks.

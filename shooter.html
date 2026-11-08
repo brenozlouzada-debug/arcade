@@ -117,6 +117,8 @@
   #t-pause { top: 8px; left: 50%; margin-left: -27px; width: 54px; height: 34px; border-radius: 10px; }
   #t-use { right: 112px; top: 6px; width: 46px; height: 46px; }
   #t-swap { right: 164px; top: 6px; width: 46px; height: 46px; }
+  #t-light { right: 216px; top: 6px; width: 46px; height: 46px; font-size: 10px; }
+  #t-light.on { background: rgba(255, 236, 170, .45); }
   #t-build { right: 216px; top: 6px; width: 46px; height: 46px; }
   #t-piece { right: 268px; top: 6px; width: 46px; height: 46px; display: none; }
   body.touch #minimap { width: 96px; height: 96px; top: 8px; right: 8px; }
@@ -323,6 +325,7 @@
   <div class="tb" id="t-chat">CHAT</div>
   <div class="tb" id="t-use">OPEN</div>
   <div class="tb" id="t-swap">GUN</div>
+  <div class="tb" id="t-light">LIGHT</div>
   <div class="tb" id="t-build">BUILD</div>
   <div class="tb" id="t-piece">WALL</div>
 </div>
@@ -430,7 +433,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-08.2000</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-08.2300</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -2737,7 +2740,7 @@
   // in the water; shafts of light slanting down; everything fades into blue-green ----
   const uwGroup = new THREE.Group(); uwGroup.visible = false; scene.add(uwGroup);
   const vents = [];
-  const headLamp = new THREE.PointLight(0xd8f0ff, 1.4, 26, 1.6); headLamp.visible = false; scene.add(headLamp);
+  const headLamp = new THREE.PointLight(0xd8f0ff, .7, 18, 1.6); headLamp.visible = false; scene.add(headLamp);
   const uwSurface = new THREE.Mesh(new THREE.PlaneGeometry(900, 900, 1, 1).rotateX(Math.PI / 2), new THREE.ShaderMaterial({
     uniforms: { uTime: WATER_U.uTime, uCol: { value: new THREE.Color(0x9ae8e0) }, uIce: { value: 0 }, uFogC: { value: new THREE.Color() }, uFar: { value: 70 } }, side: THREE.DoubleSide, transparent: true, depthWrite: false, fog: false,
     vertexShader: `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
@@ -2909,6 +2912,18 @@
   const gunFlash = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }));
   gunFlash.visible = false; gun.add(gunFlash);
   scene.add(camera);
+  // the flashlight everyone carries: a spot from just under your right hand, F to switch it;
+  // it is always in the scene and turned off with its intensity, so switching it never
+  // changes the light count and makes the shaders recompile
+  const torch = new THREE.SpotLight(0xfff2dc, 0, 46, .42, .45, 1.4);
+  torch.position.set(.18, -.2, .1); camera.add(torch); camera.add(torch.target); torch.target.position.set(.05, -.1, -10);
+  let torchOn = false;
+  const DARK_MAPS = ["night", "crystal", "abyss", "graveyard", "neon"];
+  function setTorch(on) {
+    torchOn = on; torch.intensity = on ? 3.2 : 0;
+    const b = document.getElementById("t-light"); if (b) b.classList.toggle("on", on);
+    T({ type: "square", f: on ? 1800 : 1300, dur: .03, vol: .12 });
+  }
 
   // ---- weapons ----
   const TIERS = {
@@ -3075,19 +3090,21 @@
     rocketpod:{ name: "Rocket Pod",     tier: "legendary", mag: 8,  rate: 260,  dmg: 1.2, pellets: 1, spread: 0,     recoil: 1.2, reload: 3200, snd: 70,  zoom: 62, explode: 3, speed: 38, mini: true },
     deadeye: { name: "Deadeye", tier: "exclusive", excl: true, base: "amr", mag: 1, rate: 1800, dmg: 8, pellets: 1, spread: 0, recoil: 4, reload: 3200, snd: 110, zoom: 8, scope: true, oneshot: true, tc: 0xff3344, tlife: .45 },
   };
+  // the axe everyone starts with: a melee weapon, never in chests, the shop or the armory
+  WEAPONS.axe = { name: "Axe", tier: "common", melee: true, mag: 1, rate: 520, dmg: 3.2, pellets: 1, spread: 0, recoil: 0, reload: 1, snd: 0, zoom: 70, reach: 2.9 };
   const LOOT = { common: ["smg", "mpistol", "nailgun", "sawedoff"], rare: ["shotgun", "ar", "revolver", "dbl", "handcannon", "bullpup", "flamethrower", "bouncer"], epic: ["sniper", "dmr", "lmg", "crossbow", "autosg", "plasma", "arc", "lancer", "grapple"], legendary: ["rocket", "gl", "rail", "minigun", "amr", "rocketpod", "minelauncher", "charge"] };
   LOOT.exclusive = Object.keys(WEAPONS).filter(id => WEAPONS[id].excl && id !== "chaos" && id !== "deadeye");
   LOOT.common.push("peashooter", "trench", "burstpistol", "rivet", "flaregun", "carbine");
   LOOT.rare.push("pump", "lever", "scorcher", "rifleric", "magnum", "tacsmg");
   LOOT.epic.push("battlerifle", "stormcaster", "spear", "hailstorm", "snipecarbine", "slug");
   LOOT.legendary.push("megarocket", "clustergl", "gauss", "doomgun", "titan", "minelayer");
-  const AMMO = { pistol: [48, 150], smg: [90, 300], ar: [90, 300], shotgun: [24, 72], sniper: [12, 36], rocket: [6, 18], mpistol: [80, 240], revolver: [30, 90], dbl: [20, 60], lmg: [160, 400], dmr: [30, 90], crossbow: [8, 24], gl: [12, 36], rail: [10, 30], minigun: [300, 600], nailgun: [120, 360], sawedoff: [16, 48], handcannon: [28, 84], bullpup: [112, 336], autosg: [32, 96], plasma: [80, 240], amr: [9, 27], rocketpod: [16, 48], gilded: [30, 90], voidcannon: [8, 24], storm: [160, 480], dragon: [30, 90], flamethrower: [240, 600], bouncer: [48, 144], arc: [45, 135], lancer: [18, 54], minelauncher: [12, 36], charge: [24, 72], blink: [18, 54], leech: [160, 480], singularity: [6, 18], sentry: [4, 12], hive: [4, 12], chrono: [4, 12], skyfall: [2, 6], aegis: [4, 12], stormcaller: [4, 12], frost: [48, 144], quake: [6, 18], saw: [8, 24], lift: [10, 30], mirage: [4, 12], midas: [48, 144], rewind: [4, 12], cluster: [6, 18], prism: [240, 600], seeker: [8, 24], swap: [8, 24], adrenaline: [6, 18], grapple: [10, 30], phantom: [4, 12], treasure: [4, 12], plague: [20, 60], thruster: [120, 300], squad: [2, 6], timestop: [3, 9], portal: [16, 48], necro: [42, 126], pinball: [6, 18], napalm: [6, 18], vacuum: [6, 18], mindctl: [6, 18], shrink: [12, 36], fortress: [6, 18], forcepush: [8, 24], mark: [8, 24], dash: [8, 24], echo: [20, 60], bullettime: [16, 48], totem: [4, 12], reflect: [6, 18], seer: [6, 18], lunar: [6, 18], splitter: [24, 72], launchpad: [8, 24], supply: [4, 12], hex: [6, 18], haste: [4, 12], laserfence: [16, 48], caltrop: [6, 18], sink: [4, 12], slick: [6, 18], orbs: [4, 12], longbow: [12, 36], pointblank: [8, 24], headhunter: [12, 36], gamble: [24, 72], combo: [60, 180], spool: [200, 500], bowling: [10, 30], link: [12, 36], stickybomb: [8, 24], venom: [24, 72], streak: [48, 144], executioner: [12, 36], overflow: [20, 60], barrage: [4, 12], meteor: [2, 6], smoke: [6, 18], flashbang: [8, 24], banisher: [8, 24], convert: [10, 30], anchor: [4, 12], ghost: [16, 48], smart: [28, 84], taser: [12, 36], confuse: [10, 30], drainaura: [4, 12], thorns: [4, 12], tesla: [6, 18], skybridge: [6, 18], overshield: [6, 18], terror: [8, 24], lure: [6, 18], chaos: [40, 120], avalanche: [6, 18], drill: [6, 18], doomclock: [2, 6], transformer: [32, 96], jackpot: [50, 150], revenge: [6, 18], golem: [2, 6], tankcall: [2, 6], deadeye: [5, 15], mortar: [4, 12], phase: [4, 12], glassc: [8, 24], metronome: [24, 72] };  // [starting reserve, max reserve]
+  const AMMO = { axe: [0, 0], pistol: [48, 150], smg: [90, 300], ar: [90, 300], shotgun: [24, 72], sniper: [12, 36], rocket: [6, 18], mpistol: [80, 240], revolver: [30, 90], dbl: [20, 60], lmg: [160, 400], dmr: [30, 90], crossbow: [8, 24], gl: [12, 36], rail: [10, 30], minigun: [300, 600], nailgun: [120, 360], sawedoff: [16, 48], handcannon: [28, 84], bullpup: [112, 336], autosg: [32, 96], plasma: [80, 240], amr: [9, 27], rocketpod: [16, 48], gilded: [30, 90], voidcannon: [8, 24], storm: [160, 480], dragon: [30, 90], flamethrower: [240, 600], bouncer: [48, 144], arc: [45, 135], lancer: [18, 54], minelauncher: [12, 36], charge: [24, 72], blink: [18, 54], leech: [160, 480], singularity: [6, 18], sentry: [4, 12], hive: [4, 12], chrono: [4, 12], skyfall: [2, 6], aegis: [4, 12], stormcaller: [4, 12], frost: [48, 144], quake: [6, 18], saw: [8, 24], lift: [10, 30], mirage: [4, 12], midas: [48, 144], rewind: [4, 12], cluster: [6, 18], prism: [240, 600], seeker: [8, 24], swap: [8, 24], adrenaline: [6, 18], grapple: [10, 30], phantom: [4, 12], treasure: [4, 12], plague: [20, 60], thruster: [120, 300], squad: [2, 6], timestop: [3, 9], portal: [16, 48], necro: [42, 126], pinball: [6, 18], napalm: [6, 18], vacuum: [6, 18], mindctl: [6, 18], shrink: [12, 36], fortress: [6, 18], forcepush: [8, 24], mark: [8, 24], dash: [8, 24], echo: [20, 60], bullettime: [16, 48], totem: [4, 12], reflect: [6, 18], seer: [6, 18], lunar: [6, 18], splitter: [24, 72], launchpad: [8, 24], supply: [4, 12], hex: [6, 18], haste: [4, 12], laserfence: [16, 48], caltrop: [6, 18], sink: [4, 12], slick: [6, 18], orbs: [4, 12], longbow: [12, 36], pointblank: [8, 24], headhunter: [12, 36], gamble: [24, 72], combo: [60, 180], spool: [200, 500], bowling: [10, 30], link: [12, 36], stickybomb: [8, 24], venom: [24, 72], streak: [48, 144], executioner: [12, 36], overflow: [20, 60], barrage: [4, 12], meteor: [2, 6], smoke: [6, 18], flashbang: [8, 24], banisher: [8, 24], convert: [10, 30], anchor: [4, 12], ghost: [16, 48], smart: [28, 84], taser: [12, 36], confuse: [10, 30], drainaura: [4, 12], thorns: [4, 12], tesla: [6, 18], skybridge: [6, 18], overshield: [6, 18], terror: [8, 24], lure: [6, 18], chaos: [40, 120], avalanche: [6, 18], drill: [6, 18], doomclock: [2, 6], transformer: [32, 96], jackpot: [50, 150], revenge: [6, 18], golem: [2, 6], tankcall: [2, 6], deadeye: [5, 15], mortar: [4, 12], phase: [4, 12], glassc: [8, 24], metronome: [24, 72] };  // [starting reserve, max reserve]
   Object.assign(AMMO, {peashooter: [60, 180], trench: [20, 60], burstpistol: [72, 216], rivet: [160, 400], flaregun: [12, 36], carbine: [72, 216], pump: [32, 96], lever: [36, 108], scorcher: [200, 500], rifleric: [54, 162], magnum: [25, 75], tacsmg: [108, 324], battlerifle: [60, 180], stormcaster: [36, 108], spear: [15, 45], hailstorm: [200, 500], snipecarbine: [24, 72], slug: [24, 72], megarocket: [4, 12], clustergl: [16, 48], gauss: [12, 36], doomgun: [400, 800], titan: [6, 18], minelayer: [16, 48]});
   // spawner guns: they put a unit or a structure into the world (shown in their own spot in the weapon list and the Armory)
   ["sentry", "hive", "squad", "tankcall", "golem", "mortar", "necro", "totem", "supply", "launchpad", "lure", "tesla", "fortress", "mirage", "aegis", "treasure"].forEach(id => { if (WEAPONS[id]) WEAPONS[id].spawner = true; });
   const EX50_COL = {"hex": 11158783, "haste": 16768307, "laserfence": 16724804, "caltrop": 13421772, "sink": 3359999, "slick": 2236962, "orbs": 4513279, "longbow": 8969574, "pointblank": 16737843, "headhunter": 14492211, "gamble": 16763938, "combo": 3399082, "spool": 16742178, "bowling": 7829503, "link": 16729224, "stickybomb": 16746496, "venom": 7855394, "streak": 16763955, "executioner": 13378082, "overflow": 16742382, "barrage": 16733491, "meteor": 16737826, "smoke": 10066329, "flashbang": 16777215, "banisher": 7820799, "convert": 3381759, "anchor": 4508825, "ghost": 11189230, "smart": 4504558, "taser": 5618687, "confuse": 16755251, "drainaura": 13382485, "thorns": 7842355, "tesla": 6745855, "skybridge": 14196816, "overshield": 5623039, "terror": 10040268, "lure": 16742314, "chaos": 16729343, "avalanche": 15266047, "drill": 11184810, "doomclock": 16763904, "transformer": 13421789, "jackpot": 16766720, "revenge": 16724736, "golem": 10061943, "mortar": 6715204, "phase": 10070783, "glassc": 12316415, "metronome": 16777215, "tankcall": 7109178};
   const mkSlot = (id, reserve) => ({ id, ammo: WEAPONS[id].mag, reserve: reserve == null ? Math.round(AMMO[id][0] * (hasPerk("ammo") ? 1.5 : 1)) : reserve });
-  const inv = [mkSlot("pistol")];
+  const inv = [mkSlot("pistol"), mkSlot("axe")];
   let curW = 0, reloadTimer = 0, aiming = false, reloadSfx = [];
   const wdef = () => WEAPONS[inv[curW].id];
 
@@ -3133,7 +3150,30 @@
       else if (o.material === GM.poly || o.material === GM.wood) o.material = dark;
     });
   }
+  function makeAxeModel() {
+    const g = new THREE.Group(), U = g.userData;
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: .7 }), steel = new THREE.MeshStandardMaterial({ color: 0x5a6068, roughness: .35, metalness: .8 }),
+      edge = new THREE.MeshStandardMaterial({ color: 0xd8dce0, roughness: .2, metalness: .9 }), glove = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: .85 }), wrap = new THREE.MeshStandardMaterial({ color: 0x3a2a1c, roughness: .9 });
+    // held low at the right, the haft leaning forward and in, so the head sits up in view
+    const ax = new THREE.Group(); ax.rotation.set(-1.05, .25, .35); ax.position.set(.02, -.06, -.12); g.add(ax);
+    const haft = new THREE.Mesh(new THREE.CylinderGeometry(.016, .02, .5, 10), wood); haft.position.y = .17; ax.add(haft);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(.022, .022, .12, 10), wrap); grip.position.y = -.02; ax.add(grip);
+    const head = new THREE.Group(); head.position.y = .4; head.scale.setScalar(1.6); ax.add(head);
+    // the head: a bearded blade drawn as an outline and extruded, a bright ground edge, a poll behind
+    const sh = new THREE.Shape(); sh.moveTo(-.03, .03); sh.lineTo(.03, .028); sh.quadraticCurveTo(.09, .05, .125, .09); sh.lineTo(.13, -.07); sh.quadraticCurveTo(.08, -.06, .04, -.025); sh.lineTo(-.03, -.03); sh.closePath();
+    const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: .02, bevelEnabled: true, bevelThickness: .004, bevelSize: .004, bevelSegments: 1 }), steel);
+    blade.rotation.z = Math.PI / 2; blade.position.z = -.01; head.add(blade);
+    const bit = new THREE.Mesh(new THREE.BoxGeometry(.014, .025, .17), edge); bit.rotation.x = .02; bit.position.set(0, .128, -.012); head.add(bit);
+    const poll = new THREE.Mesh(new THREE.BoxGeometry(.044, .05, .05), steel); poll.position.set(0, -.04, 0); head.add(poll);
+    const fist = new THREE.Mesh(new THREE.BoxGeometry(.08, .1, .085), glove); fist.position.y = -.02; ax.add(fist);
+    const thumb = new THREE.Mesh(new THREE.BoxGeometry(.03, .05, .03), glove); thumb.position.set(-.045, .02, .03); ax.add(thumb);
+    U.tip = -.45; U.sight = .1;
+    g.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+    g.visible = false;
+    return g;
+  }
   function makeGunModel(wid) {
+    if (WEAPONS[wid].melee) return makeAxeModel();
     const id = WEAPONS[wid].base || wid;
     const g = new THREE.Group(), U = g.userData;
     const acc = new THREE.MeshStandardMaterial({ color: TIERS[WEAPONS[wid].tier].c, emissive: TIERS[WEAPONS[wid].tier].c, emissiveIntensity: .35, metalness: .5, roughness: .4 });
@@ -7633,9 +7673,9 @@
     trackScore();
     hud.sc.textContent = player.score; hud.wv.textContent = player.wave;
     const w = wdef(), slot = inv[curW], free = mode === "free";
-    hud.ammo.textContent = free ? "\u221e" : player.reloading ? "\u2014" : slot.ammo;
-    document.getElementById("mag").textContent = free ? "\u221e" : slot.reserve;
-    document.getElementById("ammorow").classList.toggle("low", !free && !player.reloading && (slot.ammo <= Math.max(1, Math.floor(w.mag * .25)) || slot.reserve === 0));
+    hud.ammo.textContent = free || w.melee ? "\u221e" : player.reloading ? "\u2014" : slot.ammo;
+    document.getElementById("mag").textContent = free || w.melee ? "\u221e" : slot.reserve;
+    document.getElementById("ammorow").classList.toggle("low", !free && !w.melee && !player.reloading && (slot.ammo <= Math.max(1, Math.floor(w.mag * .25)) || slot.reserve === 0));
     const nd = document.getElementById("nades"); nd.textContent = "\u25cf GRENADES " + (free ? "\u221e" : nades) + "  [G]"; nd.classList.toggle("none", !free && nades <= 0);
     const wn = document.getElementById("wname");
     wn.textContent = w.name; wn.style.color = hex(TIERS[w.tier].c);
@@ -7646,7 +7686,7 @@
   let lastNoAmmo = 0;
   function reload() {
     const slot = inv[curW], w = wdef(), rd = w.reload * (hasPerk("hands") ? .75 : 1);
-    if (mode === "free" || player.reloading || slot.ammo === w.mag) return;
+    if (mode === "free" || w.melee || player.reloading || slot.ammo === w.mag) return;
     if (slot.reserve <= 0) { if (performance.now() - lastNoAmmo > 1500) { lastNoAmmo = performance.now(); notify("Out of ammo \u2022 find an ammo box", "#ff8a6a"); } return; }
     player.reloading = true; updateHud(); reloadStart = performance.now(); reloadDur = rd;
     reloadSfx.forEach(clearTimeout); reloadSfx = [];
@@ -7703,6 +7743,7 @@
   function shoot() {
     const now = performance.now(), w = wdef(), slot = inv[curW];
     if (!player.alive || player.reloading || now - lastShot < (admin.rapid ? .0001 : w.rate * (player.haste > 0 ? .5 : 1) * (w.spool ? Math.max(.2, 1 - spoolHeat) : 1))) return;
+    if (w.melee) { lastShot = now; swingAxe(w); return; }
     if (mode !== "free" && slot.ammo <= 0) { lastShot = now; sfx.click(1800, .15); reload(); return; }
     if (w.charge) { if (!chargeOn) { chargeOn = now; T({ type: "sawtooth", f: 200, f2: 900, dur: 1.2, vol: .05 }); } return; }
     lastShot = now; if (mode !== "free" && !admin.ammo) slot.ammo--;
@@ -7712,6 +7753,30 @@
     if (w.spool) spoolHeat = Math.min(.8, spoolHeat + .07);
     if (w.fx) FX[w.fx](w); else { let ww = w; if (w.metro) { const ph = performance.now() % 900, on = ph < 140 || ph > 840; ww = { ...w, dmg: w.dmg * (on ? 3 : .6), tc: on ? 0xffee55 : 0x8888aa }; if (on) popup("ON BEAT", "#ffee55"); } for (let i = 0; i < w.pellets; i++) fireRay(ww); }
     if (mode === "online") { netSend({ t: "sh", w: inv[curW].id, p: shotBatch }); shotBatch = []; }
+  }
+  let swingT = 0;
+  function swingAxe(w) {
+    swingT = 1;
+    N({ type: "bandpass", f: 700, f2: 2200, q: 1.4, dur: .17, vol: .32 });   // the whoosh
+    // the blow lands a moment into the swing
+    setTimeout(() => {
+      if (!player.alive) return;
+      const o = camera.getWorldPosition(new THREE.Vector3()), d = new THREE.Vector3(0, 0, -1).transformDirection(camera.matrixWorld);
+      ray.set(o, d); ray.far = w.reach;
+      const hitList = solidMeshes(); hitTargets().forEach(e => hitList.push(...e.hitMeshes)); trees.forEach(t => { if (!t.fall) hitList.push(t.proxy); });
+      let hit = ray.intersectObjects(hitList, false)[0]; ray.far = Infinity;
+      // a near miss on an enemy still connects: an axe is wide
+      if (!hit || !hit.object.userData.enemy) {
+        let best = null, bd = w.reach + .4;
+        for (const e of enemies) { if (e.proxy) continue; const c = e.g.position.clone().setY(e.g.position.y + 1.2 * (e.T ? e.T.scale : 1)), v = c.clone().sub(o), dist = v.length(); if (dist < bd && v.normalize().dot(d) > .72) { bd = dist; best = e; } }
+        if (best) hit = { object: best.hitMeshes[1] || best.hitMeshes[0], point: o.clone().addScaledVector(d, Math.max(.6, bd - .3)), distance: bd, face: null };
+      }
+      if (hit) {
+        const head = hit.object.userData.part === "head", e = hit.object.userData.enemy;
+        if (e) { damageEnemy(e, w.dmg * (head ? 1.6 : 1), head); impactFx(hit.point, d.clone().negate(), "flesh"); T({ f: 120, f2: 55, dur: .12, vol: .55 }); camShake = Math.max(camShake, .012); }
+        else { applyHit(hit, w); T({ f: 260, f2: 120, dur: .08, vol: .4 }); camShake = Math.max(camShake, .008); }
+      }
+    }, 120);
   }
   const GROUND_OBJ = { userData: { surface: "ground" } }, WATER_OBJ = { userData: { surface: "water" } };
   function fireRay(w) {
@@ -8953,6 +9018,7 @@
     keys[e.code] = true;
     if (!e.repeat) cheatKey(e);
     if (e.code === "KeyR") reload();
+    if (e.code === "KeyF" && !e.shiftKey && !e.repeat && active()) setTorch(!torchOn);
     if (e.code === "KeyG" && !e.repeat && document.pointerLockElement) throwGrenade();
     if (e.code === "KeyQ") setBuild(!buildState.on);
     if (e.code === "KeyC" && player.alive && active() && wdef().scope && !buildState.on) setAim(!aiming);
@@ -9331,7 +9397,7 @@
     const btn = document.createElement("div"); btn.id = "admbtn"; btn.textContent = "ADMIN • `"; document.body.appendChild(btn);
     const box = document.createElement("div"); box.id = "adm"; document.body.appendChild(box);
     const items = [
-      ["fly", "[F] Fly (Space up, V down)", () => (admin.fly = !admin.fly, admin.fly ? 1 : 0), true],
+      ["fly", "[Shift+F] Fly (Space up, V down)", () => (admin.fly = !admin.fly, admin.fly ? 1 : 0), true],
       ["guns", "[L] Give all guns", () => { giveAll(); }, false],
       ["kill", "[K] Kill all hostiles", () => { enemies.slice().forEach(e => damageEnemy(e, 1e9, false)); notify("Hostiles cleared", "#ffcf4a"); }, false],
       ["ammo", "[I] Infinite ammo and grenades", () => (admin.ammo = !admin.ammo, 1), true],
@@ -9412,6 +9478,7 @@
       Numpad4: "squad", Numpad5: "freeze", Numpad6: "lowg", Numpad7: "wood", Numpad8: "heal", Numpad9: "chests" };
     addEventListener("keydown", e => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || !HOT[e.code]) return;
+      if (e.code === "KeyF" && !e.shiftKey) return;   // plain F is everyone's flashlight
       if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
       run(HOT[e.code]);
     });
@@ -9797,7 +9864,7 @@
   const ARM_TABS = [["all", "All"], ["common", "Common"], ["rare", "Rare"], ["epic", "Epic"], ["legendary", "Legendary"], ["exclusive", "Exclusive"], ["spawner", "\u2699 Spawners"]];
   function chestSource(id) { for (const t of ["common", "rare", "epic", "legendary"]) if (LOOT[t].includes(id)) return t; return null; }
   function renderArmory() {
-    const ids = Object.keys(WEAPONS), tabs = document.getElementById("armtabs");
+    const ids = Object.keys(WEAPONS).filter(id => !WEAPONS[id].melee), tabs = document.getElementById("armtabs");
     tabs.textContent = "";
     ARM_TABS.forEach(([k, n]) => { const b = document.createElement("button"); b.type = "button"; b.textContent = n; b.className = k === armTab ? "on" : ""; b.onclick = () => { armTab = k; renderArmory(); }; tabs.appendChild(b); });
     const list = ids.filter(id => armTab === "all" || (armTab === "spawner" ? WEAPONS[id].spawner : WEAPONS[id].tier === armTab));
@@ -10313,7 +10380,7 @@
   }
   function mpRespawn() {
     if (mode !== "online") return;
-    inv.length = 0; inv.push(mkSlot("pistol")); if (useExotics) Object.keys(WEAPONS).forEach(id => { if (WEAPONS[id].excl && hasItem("gn_" + id)) inv.push(mkSlot(id)); }); deadeyeFirst(); setWeapon(inv.findIndex(w => w.id === "pistol"));
+    inv.length = 0; inv.push(mkSlot("pistol"), mkSlot("axe")); if (useExotics) Object.keys(WEAPONS).forEach(id => { if (WEAPONS[id].excl && hasItem("gn_" + id)) inv.push(mkSlot(id)); }); deadeyeFirst(); setWeapon(inv.findIndex(w => w.id === "pistol"));
     const sp = pickSpawn();
     Object.assign(player, { hp: 100, alive: true, vy: 0, reloading: false, invuln: 2.5 }); player.pos.set(sp[0], 1.7, sp[1]);
     netSend({ t: "rs" });
@@ -10483,6 +10550,7 @@
     tap("t-aim", () => { if (!buildState.on) setAim(!aiming); });
     tap("t-use", () => { const c = nearestChest(); if (c) openChest(c); });
     tap("t-swap", () => { if (inv.length > 1) setWeapon((curW + 1) % inv.length); });
+    tap("t-light", () => setTorch(!torchOn));
     tap("t-build", () => setBuild(!buildState.on));
     tap("t-piece", () => { buildState.type = BUILD_TYPES[(BUILD_TYPES.indexOf(buildState.type) + 1) % BUILD_TYPES.length]; updateBuildHud(); });
     tap("t-pause", () => {
@@ -11586,7 +11654,7 @@
     trees.slice().forEach(t => { scene.remove(t.root); const i = obstacles.indexOf(t.obs); if (i >= 0) obstacles.splice(i, 1); });
     trees.length = 0; treeRespawns.length = 0;
     for (let i = 0; i < TREE_COUNT; i++) { const [x, z] = freeSpot(i * TARGET_COUNT / TREE_COUNT); spawnTree(x, z); }
-    inv.length = 0; inv.push(mkSlot("pistol")); if (useExotics) Object.keys(WEAPONS).forEach(id => { if (WEAPONS[id].excl && hasItem("gn_" + id)) inv.push(mkSlot(id)); }); deadeyeFirst(); setWeapon(inv.findIndex(w => w.id === "pistol"));
+    inv.length = 0; inv.push(mkSlot("pistol"), mkSlot("axe")); if (useExotics) Object.keys(WEAPONS).forEach(id => { if (WEAPONS[id].excl && hasItem("gn_" + id)) inv.push(mkSlot(id)); }); deadeyeFirst(); setWeapon(inv.findIndex(w => w.id === "pistol"));
     builds.slice().forEach(removePiece);
     buildState.mats = 150 + (hasPerk("wood") ? 100 : 0); setBuild(false);
     document.getElementById("wavebox").style.display = mode === "survival" ? "" : "none";
@@ -11600,6 +11668,7 @@
     matchLive = true; spawnDog();
     updateHud(); startWave(); warmShaders();
     if (mode === "survival") for (let i = 0; i < (COARSE ? 1 : 2); i++) spawnShip(false);
+    setTorch(DARK_MAPS.includes(mapId()));   // dark places start with it on
     if (UW) later(1.2, () => notify(IS_TOUCH ? "Under the sea: swim where you look, the jump button swims up" : "Under the sea: swim where you look \u2022 Space up \u2022 C down", "#9affe8"));
     if (mode === "free") { banner("FREE PLAY", "shoot targets \u2022 open chests \u2022 build"); for (let i = 0; i < TARGET_COUNT; i++) spawnTarget(i); }
     for (let i = 0; i < CHEST_COUNT; i++) spawnChest(i * TARGET_COUNT / CHEST_COUNT);
@@ -11939,6 +12008,11 @@
       gy - Math.abs(Math.cos(bob * .5)) * .014 * bobAmt + swayY * sw - sprintK * .07 - rl * .16 - switchT * .36 + Math.sin(breathT * 1.5) * .0045 * gb,
       gz + kickZ - rl * .03);
     gun.rotation.set(kickRot + rl * .25 - switchT * .55 - sprintK * .1, sprintK * .6 + swayX * 1.5, kickRoll - rl * .7 + sprintK * .25 + swayX * 2);
+    if (wdef().melee) {
+      // the axe: carried angled on the right, chopped down and across when you swing
+      swingT = Math.max(0, swingT - dt * 3.6); const k = Math.sin((1 - swingT) * Math.PI) * (swingT > 0 ? 1 : 0), up = swingT > .7 ? (swingT - .7) / .3 : 0;
+      gun.rotation.x += .25 + up * .9 - k * 1.5; gun.rotation.z += .35 - k * .5; gun.rotation.y += -.2 + k * .35; gun.position.y += .03 - k * .06; gun.position.x += .02 - k * .1;
+    }
     muzzle.intensity = Math.max(0, muzzle.intensity - dt * 45);
     flashT -= dt; gunFlash.visible = flashT > 0 && gun.visible;
     if (U.rotor) { rotorV = Math.max(0, rotorV - dt * 5); U.rotor.rotation.z += rotorV * dt * 40; }
