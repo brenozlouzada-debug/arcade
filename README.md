@@ -453,6 +453,13 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Three more underwater maps
+
+- **Kelp Forest.** Sunlit green water over a sandy floor, crowded with towering stands of swaying kelp (some rising most of the way to the surface), with coral and boulders. It's great for ambushes: you lose sight of things fast among the stalks.
+- **Abyssal Trench.** Far too deep for the surface to show: nearly black water lit only by what lives down there. Glowing tube worms and anemones in four colours, jellyfish drifting overhead, and hydrothermal vents whose mouths glow orange and pour out shimmering plumes. The floor is jagged black rock ridges and pillars to fight among. You carry a headlamp that lights the water around you, and the specks drifting in the water glow.
+- **Frozen Depths.** Under a sheet of ice instead of open water. The ceiling is lower (24 m), pale and split into cracked plates, fading into the cold blue water, with icicles hanging down all over. Ice spires and boulders sit on a pale floor.
+- All three are underwater maps like Coral Reef and Sunken Temple: you swim in every direction, the sea monsters swim around you, and the submarine hunts you through the water. Each map sets its own water colour, visibility, light and surface.
+
 ## Ships no longer bring enemies
 
 Warships, submarines, galleons, the ghost ship, tanks, helicopters and saucers still sail, drive, fly and fight, but none of them sends enemies in any more. Crew no longer jump off ships, the tank's hatch, the helicopter's ropes and the submarine's hatch are gone, and the saucer no longer beams anyone down. Every enemy now comes from the waves.

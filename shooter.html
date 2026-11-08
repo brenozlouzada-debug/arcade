@@ -430,7 +430,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-08.1700</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-08.2000</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -1007,7 +1007,23 @@
       hemi: [0xe0f0d0, 0x3a3a1a, .55], sun: [0xfff0c8, .9], ground: { a: 0x4a7a30, b: 0x365a24, c: 0x6a5a34, far: 0x345a2a, tex: "grass" }, mount: { col: 0x3a6a4a, cap: false }, wall: 0xb0b8a0,
       grass: { n: 1.2, h: [.24, .32], s: [.55, .75], l: [.22, .36] }, flowers: [0xff4d6d, 0xffd23a, 0xff8a4d], rockCol: 0x5a6a52,
       tree: "pine", pineCols: [0x1f6a2a, 0x2a7a30, 0x1a5a28], forest: "pine", forestCols: [0x1f6a2a, 0x2a7a30, 0x1a5a28], layout: { crates: 8, containers: 2, barrels: 5, barriers: 3 }, extras: ["ruins", "boulders", "mounds"],
-      ruinCol: 0x8a9a7a, moundCol: 0x3a6a2a, boulderCol: 0x5a6a52, contCols: ["#3f7a4f", "#6a4a2a"], mini: "#1f4a22", cloudK: .9 }
+      ruinCol: 0x8a9a7a, moundCol: 0x3a6a2a, boulderCol: 0x5a6a52, contCols: ["#3f7a4f", "#6a4a2a"], mini: "#1f4a22", cloudK: .9 },
+    // more of the sea: a sunlit kelp forest, the black abyss of a trench, and the cold under an ice sheet
+    kelp: { name: "Kelp Forest", underwater: true, uw: { deep: 0x1a5a3a, far: 64, light: [0xb8ffd0, .6], hemi: [0xa8f0c0, 0x0a2a1a, .8], surf: 0xc8ffd8 }, seed: 7746, sw: ["#2a7a3a", "#a8e070"], fog: 0x1a5a3a, near: 3, far: 64, top: 0x0a3a2a, mid: 0x2a7a4a, sunCol: [.8, 1, .8], glow: .5, stars: 0,
+      hemi: [0xa8f0c0, 0x0a2a1a, .8], sun: [0xc8ffd8, .8], ground: { a: 0x8a7a50, b: 0x6a6a3a, c: 0x5a4a2a, far: 0x4a5a3a, tex: "sand" }, mount: { col: 0x2a4a3a, cap: false }, wall: 0x6a8a6a,
+      grass: { n: 1.1, h: [.25, .32], s: [.5, .7], l: [.25, .4] }, flowers: [0xffc83a, 0xff7a6a], rockCol: 0x4a5a4a,
+      tree: "dead", pineCols: [0x5a7a2a], forest: "spires", forestCols: [0x3a4a3a, 0x2a3a2e, 0x4a5a48], layout: { crates: 5, containers: 1, barrels: 3, barriers: 1 }, extras: ["kelpforest", "boulders", "coral"],
+      boulderCol: 0x4a5a4a, contCols: ["#3f7a4f", "#6a4a2a"], mini: "#1a4a2a", cloudK: 0 },
+    abyss: { name: "Abyssal Trench", underwater: true, uw: { deep: 0x041422, far: 52, light: [0x5a8aff, .4], hemi: [0x4a6aaa, 0x0a1020, 1.1], surf: 0x1a3a5a, dark: true }, seed: 8857, sw: ["#020814", "#3affd8"], fog: 0x02080e, near: 2, far: 46, top: 0x000004, mid: 0x02101c, sunCol: [.4, .6, 1], glow: .3, stars: 0,
+      hemi: [0x2a4a8a, 0x020408, .55], sun: [0x3a6aff, .25], ground: { a: 0x2a2a34, b: 0x1c1c26, c: 0x3a2a3a, far: 0x14141c, tex: "asphalt" }, mount: { col: 0x0a0a14, cap: false }, wall: 0x3a3a4a,
+      grass: { n: .3, h: [.5, .6], s: [.7, .9], l: [.35, .5] }, flowers: [0x3affd8, 0xa86aff], rockCol: 0x2a2a34,
+      tree: "dead", pineCols: [0x2a2a34], forest: "spires", forestCols: [0x14141c, 0x1c1c26, 0x24242e], layout: { crates: 4, containers: 1, barrels: 3, barriers: 1 }, extras: ["vents", "trench", "glowlife"],
+      boulderCol: 0x2a2a34, contCols: ["#2a2a3a"], mini: "#06101c", cloudK: 0 },
+    frozen: { name: "Frozen Depths", underwater: true, uw: { deep: 0x3a7a9a, far: 60, light: [0xe0f4ff, .5], hemi: [0xd8f0ff, 0x1a3a4a, .85], surf: 0xe8f8ff, ice: true, top: 24 }, seed: 9968, sw: ["#bfe8ff", "#2a6a9a"], fog: 0x3a7a9a, near: 3, far: 60, top: 0x2a5a7a, mid: 0x6aaac8, sunCol: [.9, .95, 1], glow: .4, stars: 0,
+      hemi: [0xd8f0ff, 0x1a3a4a, .85], sun: [0xe0f4ff, .5], ground: { a: 0x8a9aa8, b: 0x6a7a88, c: 0x5a6a78, far: 0x5a6a78, tex: "snow" }, mount: { col: 0x6a8aa8, cap: true }, wall: 0xb8d0e0,
+      grass: { n: .15, h: [.5, .55], s: [.2, .3], l: [.6, .7] }, flowers: null, rockCol: 0x7a8a9a,
+      tree: "dead", pineCols: [0x6a8a9a], forest: "spires", forestCols: [0xc8e0f0, 0xa8c8e0, 0xe0f0ff], layout: { crates: 5, containers: 1, barrels: 3, barriers: 2 }, extras: ["icecap", "icespires", "boulders"],
+      boulderCol: 0x8a9aaa, contCols: ["#2f5f8f", "#8a9aaa"], mini: "#6aa0c0", cloudK: 0 }
   };
   // who you fight on a map, and what comes at you from the sea or the sky: soldiers and
   // warships on Earth, aliens and their saucer on the Moon and Xeno World, sea monsters
@@ -1025,7 +1041,7 @@
     jungle: ["merc", "heli"], cartel: ["merc", "heli"], volcano: ["merc", "heli"], city: ["human", "heli"], westtown: ["merc", "heli"],
     desert: ["human", "tank"], redrock: ["human", "tank"],
     pirate: ["pirate", "galleon"], beach: ["pirate", "galleon"],
-    reef: ["sea", "sub"], temple: ["sea", "sub"], shrooms: ["sea", "sub"],
+    reef: ["sea", "sub"], temple: ["sea", "sub"], shrooms: ["sea", "sub"], kelp: ["sea", "sub"], abyss: ["sea", "sub"], frozen: ["sea", "sub"],
     graveyard: ["undead", "ghost"]
   };
   const mapId = () => Object.keys(MAPS).find(k => MAPS[k] === curMap);
@@ -1280,7 +1296,7 @@
   let WATER_ON = true;
   // the underwater maps: no coast, the whole field is under the sea, with the surface far overhead
   let UW = false;
-  const UW_TOP = 34;
+  let UW_TOP = 34;
   const SHORE = -ARENA + 52;
   const shoreZ = x => SHORE + Math.sin(x * .045 + 1.3) * 7 + Math.sin(x * .11 + .4) * 2.5;
   function seaFloor(x, z) {
@@ -1844,7 +1860,7 @@
       transformed.z += (cos(ph * 0.87) * 0.10 + sin(ph * 3.1) * 0.03) * bendK * gust;
       transformed.y -= abs(transformed.x) * 0.12;`);
   };
-  const kelpMat = new THREE.MeshStandardMaterial({ color: 0x5a7a2a, roughness: .7, side: THREE.DoubleSide });
+  const kelpMat = new THREE.MeshStandardMaterial({ color: 0x4a6022, roughness: .75, side: THREE.DoubleSide });
   kelpMat.onBeforeCompile = sh => {
     sh.uniforms.uTime = WATER_U.uTime;
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nuniform float uTime;").replace("#include <begin_vertex>", `#include <begin_vertex>
@@ -1986,7 +2002,7 @@
     worldRoot.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     while (worldRoot.children.length) worldRoot.remove(worldRoot.children[0]);
     trees.slice().forEach(t => { scene.remove(t.root); const i = obstacles.indexOf(t.obs); if (i >= 0) obstacles.splice(i, 1); });
-    trees.length = 0; treeRespawns.length = 0; placed.length = 0;
+    trees.length = 0; treeRespawns.length = 0; placed.length = 0; vents.length = 0;
     seedRng(M.seed); worldTarget = worldRoot;
     if (M.underwater && M.extras.includes("temple")) buildMonument(0, -48);
   // crates
@@ -2480,6 +2496,59 @@
       addProp(g, sp[0], sp[1], .8, .8, 2.6, true, "ground");
     }
   }
+  if (M.extras.includes("kelpforest")) {
+    // the kelp forest: stands of kelp everywhere, some rising most of the way to the surface;
+    // they all share one material, so the world merge makes them a single draw
+    for (let i = 0; i < PK(55); i++) {
+      const sp = spotFor(1.2, 20); if (!sp) continue;
+      const k = kelpStand(rnd(8, 22)); k.position.set(sp[0], 0, sp[1]); k.scale.setScalar(rnd(.8, 1.3)); worldTarget.add(k);
+    }
+  }
+  if (M.extras.includes("trench")) {
+    // the trench floor: jagged black rock ridges and pillars to fight among
+    const rm = new THREE.MeshStandardMaterial({ color: 0x1c1c26, roughness: .95, flatShading: true });
+    for (let i = 0; i < PK(16); i++) {
+      const sp = spotFor(2.6); if (!sp) continue; const h = rnd(3, 9), g = new THREE.Group(); g.position.set(sp[0], 0, sp[1]);
+      const r = new THREE.Mesh(new THREE.ConeGeometry(rnd(1.6, 2.6), h, 6, 3), rm); r.position.y = h / 2; r.rotation.y = rnd(0, 6); g.add(r);
+      const r2 = new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1, 1.8), 0), rm); r2.position.set(rnd(-1, 1), .6, rnd(-1, 1)); g.add(r2);
+      addProp(g, sp[0], sp[1], 1.6, 1.6, h, false, "concrete");
+    }
+  }
+  if (M.extras.includes("vents")) {
+    // hydrothermal vents: crusted chimneys that glow at the mouth and pour out shimmering water
+    const cm = new THREE.MeshStandardMaterial({ color: 0x2a2224, roughness: 1, flatShading: true });
+    for (let i = 0; i < PK(6); i++) {
+      const sp = spotFor(2); if (!sp) continue; const h = rnd(3, 6), g = new THREE.Group(); g.position.set(sp[0], 0, sp[1]);
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(.5, 1.4, h, 8, 3), cm); c.position.y = h / 2; g.add(c);
+      const mouth = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, .1, 12), emissiveMat(0xff7a2a, 2.4)); mouth.position.y = h + .02; g.add(mouth);
+      if (i < 3 && !COARSE) { const L = new THREE.PointLight(0xff8a3a, 1.6, 16); L.position.y = h + 1; g.add(L); }
+      addProp(g, sp[0], sp[1], 1, 1, h, true, "concrete");
+      vents.push({ x: sp[0], y: h + .3, z: sp[1] });
+    }
+  }
+  if (M.extras.includes("glowlife")) {
+    // the abyss's own light: glowing tube worms, anemones and drifting jellies
+    const cols = [0x3affd8, 0xa86aff, 0x3a8aff, 0xff5ad8], gm = {}, glowM = c => gm[c] || (gm[c] = emissiveMat(c, 1.5));   // one material per colour, so it all merges
+    for (let i = 0; i < PK(40); i++) {
+      const sp = spotFor(.6, 20); if (!sp) continue; const col = pick(cols), g = new THREE.Group(); g.position.set(sp[0], 0, sp[1]);
+      for (let k = 0; k < 5; k++) { const h = rnd(.4, 1.4), t = new THREE.Mesh(new THREE.CylinderGeometry(.03, .06, h, 5), glowM(col)); t.position.set(rnd(-.3, .3), h / 2, rnd(-.3, .3)); g.add(t); }
+      worldTarget.add(g);
+    }
+    for (let i = 0; i < PK(14); i++) {
+      const j = new THREE.Mesh(new THREE.SphereGeometry(rnd(.4, .9), 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), glowM(pick(cols)));
+      j.position.set(rnd(-ARENA + 10, ARENA - 10), rnd(4, 20), rnd(-ARENA + 10, ARENA - 10)); worldTarget.add(j);
+    }
+  }
+  if (M.extras.includes("icecap")) {
+    // icicles and ice ridges hanging down from the sheet overhead
+    const im = new THREE.MeshStandardMaterial({ color: 0xd8f0ff, roughness: .2, metalness: .1, transparent: true, opacity: .9 });
+    const top = (M.uw && M.uw.top) || 34;
+    for (let i = 0; i < PK(90); i++) {
+      const h = rnd(1.5, 7), c = new THREE.Mesh(new THREE.ConeGeometry(rnd(.3, .9), h, 6), im);
+      c.position.set(rnd(-ARENA + 4, ARENA - 4), top - h / 2 + .1, rnd(-ARENA + 4, ARENA - 4)); c.rotation.x = Math.PI; worldTarget.add(c);
+    }
+
+  }
   if (M.extras.includes("towers")) {
     const sm2 = new THREE.MeshStandardMaterial({ map: TEX.concrete, color: 0xa0a09a, roughness: 1 }), rf = new THREE.MeshStandardMaterial({ color: 0x8a3a2a, roughness: .8 });
     for (let i = 0; i < PK(3); i++) {
@@ -2667,11 +2736,23 @@
   // ---- under the sea: the surface far overhead, rippling silver from below; motes drifting
   // in the water; shafts of light slanting down; everything fades into blue-green ----
   const uwGroup = new THREE.Group(); uwGroup.visible = false; scene.add(uwGroup);
+  const vents = [];
+  const headLamp = new THREE.PointLight(0xd8f0ff, 1.4, 26, 1.6); headLamp.visible = false; scene.add(headLamp);
   const uwSurface = new THREE.Mesh(new THREE.PlaneGeometry(900, 900, 1, 1).rotateX(Math.PI / 2), new THREE.ShaderMaterial({
-    uniforms: { uTime: WATER_U.uTime, uCol: { value: new THREE.Color(0x9ae8e0) } }, side: THREE.DoubleSide, transparent: true, depthWrite: false, fog: false,
+    uniforms: { uTime: WATER_U.uTime, uCol: { value: new THREE.Color(0x9ae8e0) }, uIce: { value: 0 }, uFogC: { value: new THREE.Color() }, uFar: { value: 70 } }, side: THREE.DoubleSide, transparent: true, depthWrite: false, fog: false,
     vertexShader: `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: `uniform float uTime; uniform vec3 uCol; varying vec3 vW;
-      void main() { vec2 p = vW.xz * .06; float t = uTime * .5;
+    fragmentShader: `uniform float uTime, uIce, uFar; uniform vec3 uCol, uFogC; varying vec3 vW;
+      float ih(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        if (uIce > .5) {
+          // the underside of an ice sheet: pale, in plates split by darker cracks, lighter where it thins
+          vec2 q = vW.xz * .09, id = floor(q), f = fract(q); float md = 9.;
+          for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) { vec2 o = vec2(x, y), r = o + vec2(ih(id + o), ih(id + o + 3.1)) - f; md = min(md, dot(r, r)); }
+          float crack = smoothstep(.0, .05, md), thin = .8 + .25 * ih(floor(vW.xz * .05));
+          float dI = length(vW - cameraPosition);
+          gl_FragColor = vec4(mix(uCol * thin * mix(.45, 1., crack), uFogC, smoothstep(8., uFar * 1.1, dI)), 1.); return;
+        }
+        vec2 p = vW.xz * .06; float t = uTime * .5;
         float w = sin(p.x * 3. + t) * sin(p.y * 2.6 - t * 1.2) + sin((p.x + p.y) * 4.1 + t * 1.7) * .5;
         float d = length(vW.xz - cameraPosition.xz);
         float a = (.35 + .25 * smoothstep(.2, 1.2, w)) * smoothstep(260., 40., d);
@@ -2687,17 +2768,32 @@
   const uwRays = [];
   for (let i = 0; i < (COARSE ? 5 : 10); i++) { const r = new THREE.Mesh(new THREE.PlaneGeometry(rnd(3, 7), 44, 1, 1), rayMat); r.userData = { ox: rnd(-40, 40), oz: rnd(-40, 40), ph: rnd(0, 6) }; uwRays.push(r); uwGroup.add(r); }
   function applyUnderwater(M) {
-    uwGroup.visible = UW; sky.visible = !UW; GROUND_U.uCaus.value = UW ? 1 : 0;
+    const W = M.uw || {};
+    if (!UW) headLamp.visible = false;
+    uwGroup.visible = UW; sky.visible = !UW; GROUND_U.uCaus.value = UW && !W.dark && !W.ice ? 1 : UW && W.ice ? .6 : 0;
     if (!UW) return;
-    const deep = M === MAPS.temple ? 0x0a3e4a : 0x0c5468;
-    scene.background.setHex(deep); scene.fog.color.setHex(deep); scene.fog.near = 3; scene.fog.far = 72;
-    hemi.color.setHex(0x9adcd8); hemi.groundColor.setHex(0x0a2a30); hemi.intensity = .75 * HEMI_K;
-    sun.color.setHex(0xb8fff0); sun.intensity = .55 * SUN_K;
+    UW_TOP = W.top || 34; uwSurface.position.y = UW_TOP;
+    // an ice sheet overhead instead of open water: white, cracked, letting through a cold glow
+    const SU = uwSurface.material.uniforms;
+    SU.uIce.value = W.ice ? 1 : 0; SU.uCol.value.setHex(W.surf || 0x9ae8e0); SU.uFogC.value.setHex(W.deep || 0x0c5468); SU.uFar.value = W.far || 72;
+    uwSurface.material.transparent = !W.ice; uwSurface.material.depthWrite = !!W.ice;
+    // in the dark of the abyss you carry a lamp
+    headLamp.visible = !!W.dark;
+    uwSurface.visible = !W.dark;                       // the abyss is far too deep to see the surface
+    uwRays.forEach(r => { r.visible = !W.dark; });
+    uwSnow.material.color.setHex(W.dark ? 0x7affe0 : 0xd8fff4); uwSnow.material.opacity = W.dark ? .7 : .55;
+    const deep = W.deep || (M === MAPS.temple ? 0x0a3e4a : 0x0c5468);
+    scene.background.setHex(deep); scene.fog.color.setHex(deep); scene.fog.near = 3; scene.fog.far = W.far || 72;
+    const h = W.hemi || [0x9adcd8, 0x0a2a30, .75], l = W.light || [0xb8fff0, .55];
+    hemi.color.setHex(h[0]); hemi.groundColor.setHex(h[1]); hemi.intensity = h[2] * HEMI_K;
+    sun.color.setHex(l[0]); sun.intensity = l[1] * SUN_K;
   }
   function stepUnderwater(dt) {
     if (!UW) return;
+    vents.forEach(v => { if (Math.random() < dt * 6 && Math.hypot(v.x - camera.position.x, v.z - camera.position.z) < 60) puff(new THREE.Vector3(v.x + rnd(-.2, .2), v.y, v.z + rnd(-.2, .2)), rnd(.3, .6), 3, 0x6a5a5a, new THREE.Vector3(rnd(-.2, .2), 2.4, rnd(-.2, .2)), 2.6, .4); });
     GROUND_U.uCT.value = WATER_U.uTime.value;
     const c = camera.position;
+    if (headLamp.visible) headLamp.position.set(c.x - Math.sin(yaw) * 2, c.y + .3, c.z - Math.cos(yaw) * 2);
     uwSurface.position.x = c.x; uwSurface.position.z = c.z;
     const P = uwSnow.geometry.attributes.position, a = P.array;
     for (let i = 0; i < snowN; i++) {
