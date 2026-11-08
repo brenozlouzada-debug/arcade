@@ -453,6 +453,14 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Under the sea: Coral Reef and Sunken Temple
+
+- **The whole map is underwater.** On Coral Reef and Sunken Temple the coast and the sea are gone: the whole field is under the water, with the surface about 34 m overhead, rippling silver seen from below. Light slants down in shafts, motes drift through the water, the seabed is lit by dancing caustics, and everything fades into blue-green. There are no clouds or birds, the far forest is rock spires, the trees are tall swaying kelp, and the dog stays home.
+- **Swim in every direction.** You swim where you look: hold W while looking up to swim up, or down to dive. **Space** swims straight up and **C** (or Ctrl) swims down, and you drift to a stop rather than sink. You can stand on the seabed, and you can't swim out through the surface or up through the temple's roofs. Bubbles stream off you as you swim. On a phone, look and move to swim, and the jump button swims up.
+- **Everyone swims.** Sea monsters swim at their own depths around yours (above, below and level with you), with bubbles trailing behind them. Your squad swims along with you.
+- **The submarine is underwater too.** It patrols through the water in long, slow circles, with a searchlight beam ahead of it and bubbles from its screw. It fires torpedoes from its bow tubes when you are ahead of it and lets sea monsters out of a hatch. Destroyed, it sinks to the seabed in a cloud of bubbles and blows apart there. Rockets and torpedoes leave bubble trails instead of smoke.
+- **The Sunken Temple's monument** (modelled in Blender, `tools/props/make_temple.py`). A vast stepped monument of sea-green tiled stone on a wide plinth, an original design. It has a great hall you can swim into through a tall gateway or the side and back doors, with a glowing core on an altar ringed by four pillars, a colonnade along the front, an upper tier and a crowned sanctum with a stepped pyramid roof, and four corner towers with lantern caps. Rows of glowing lanterns are set into every wall. The stone is laid with tiles (and the odd mossy one) in the game, and the whole thing is solid: you can stand on its roofs and take cover in its hall.
+
 ## Every map's enemies and ship now match its biome
 
 All 28 maps were matched to where they are, so there are no soldiers in space and no tanks in a jungle:
