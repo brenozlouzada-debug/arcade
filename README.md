@@ -453,6 +453,12 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Submarines: underwater only, rebuilt, and they groan as they die
+
+- **Only under the sea.** Submarines now appear only on the underwater maps (Coral Reef, Sunken Temple, Kelp Forest, Abyssal Trench, Frozen Depths). Mushroom Grove, the one surface map that had one, now has aliens and their saucer, which suits its glowing purple grove, and the game can never put a submarine on the surface again.
+- **Rebuilt in Blender.** A modern attack boat: a smooth teardrop hull with a long parallel midbody and a long tapering tail; a slim hydrofoil-section sail with a rounded cap, fairwater planes, masts and a lit bridge window; an X-tail of four hydrofoil planes; an open pump-jet shroud with stator vanes; a bow sonar dome, a towed-array fairing, flush missile doors and hatches, draft marks and navigation lights. In the game the black hull is covered in rubbery anechoic tiles, each a slightly different shade with fine seams between and the odd replaced tile.
+- **The groan.** When a submarine is destroyed and sinks you hear the hull dying under pressure: long, deep groans of bending steel that slide down in pitch and waver, creaks of stressed metal and the pops of rivets letting go over them, and a last low boom when it gives way on the seabed. The sound is loud enough to hear across the map.
+
 ## A flashlight and an axe for everyone
 
 - **Flashlight.** You start every match with one, on every map, on land and underwater. Press **F** to switch it on or off (on a phone, the **LIGHT** button). It throws a warm spot of light ahead of you from under your right hand and turns itself on at the start of a match on dark maps: Moonlight, Crystal Caverns, Abyssal Trench, Hollow Graves and Neon District. It's always present and only its brightness changes, so switching it never makes the game stutter. Admin fly moved from F to **Shift+F**.
