@@ -453,6 +453,10 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Ships no longer bring enemies
+
+Warships, submarines, galleons, the ghost ship, tanks, helicopters and saucers still sail, drive, fly and fight, but none of them sends enemies in any more. Crew no longer jump off ships, the tank's hatch, the helicopter's ropes and the submarine's hatch are gone, and the saucer no longer beams anyone down. Every enemy now comes from the waves.
+
 ## Under the sea: Coral Reef and Sunken Temple
 
 - **The whole map is underwater.** On Coral Reef and Sunken Temple the coast and the sea are gone: the whole field is under the water, with the surface about 34 m overhead, rippling silver seen from below. Light slants down in shafts, motes drift through the water, the seabed is lit by dancing caustics, and everything fades into blue-green. There are no clouds or birds, the far forest is rock spires, the trees are tall swaying kelp, and the dog stays home.
