@@ -433,7 +433,7 @@
   </div>
   <p class="tip">Shoot the pine trees for wood to build with. Ammo is limited: pick up green medkits and olive ammo boxes (soldiers drop them too). Soldiers carry guns and shoot back. Use crates and walls for cover, aim for the head, and loot chests for better weapons.</p>
   <p class="tip touch-only">Works best in landscape.</p>
-  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-09.0100</p>
+  <p class="tip" id="bld" style="opacity:.45;font-size:12px">build 2026-11-09.0400</p>
 </div>
 
 <!-- three.js r128 (MIT license, https://threejs.org) is inlined so this file works offline -->
@@ -7154,7 +7154,7 @@
     const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
     const p1 = new THREE.Mesh(boxG(3.4, 3.4, 29), proxyMat); g.add(p1);
     const p2 = new THREE.Mesh(boxG(1.2, 2.8, 4), proxyMat); p2.position.set(0, 2.9, 4.3); g.add(p2);
-    const s = { g, body, radar: new THREE.Object3D(), turrets: [{ muzzles: tubes, cd: rnd(4, 7) }], proxies: [p1, p2], kind: "deepsub",
+    const s = { g, body, lamp, beam, radar: new THREE.Object3D(), turrets: [{ muzzles: tubes, cd: rnd(4, 7) }], proxies: [p1, p2], kind: "deepsub",
       hp: SHIP_HP * .8, maxHp: SHIP_HP * .8, sink: 0, hitT: 0, crewT: rnd(12, 18), burn: 0, heading: 0,
       orbit: rnd(0, Math.PI * 2), orbitR: rnd(ARENA * .4, ARENA * .6), orbitS: (Math.random() < .5 ? 1 : -1) * rnd(.035, .05), alt: rnd(10, 18) };
     s.x = Math.cos(s.orbit) * s.orbitR; s.z = Math.sin(s.orbit) * s.orbitR; s.y = s.alt;
@@ -7167,14 +7167,39 @@
   function stepDeepSub(s, dt, i) {
     const g = s.g, t = WATER_U.uTime.value;
     if (s.sink > 0) {
-      s.sink += dt; s.vy = Math.max(-3, (s.vy || 0) - dt * 1.5); s.y += s.vy * dt; g.rotation.x = Math.min(.5, g.rotation.x + dt * .1); g.rotation.z += dt * .15;
-      g.position.y = s.y;
-      if (Math.random() < dt * 30) puff(new THREE.Vector3(rnd(-1, 1), 1, rnd(-12, 12)).applyMatrix4(g.matrixWorld), rnd(.15, .4), 2.5, 0xeafffa, new THREE.Vector3(rnd(-.2, .2), 3, rnd(-.2, .2)), 1.4, .6);
-      g.updateMatrixWorld();
-      const gy = terrainH(s.x, s.z);
-      if (s.y < gy + 1.5 || s.sink > 12) {
-        for (let k = 0; k < 4; k++) later(k * .15, () => { const p = new THREE.Vector3(rnd(-1, 1), 0, rnd(-10, 10)).applyMatrix4(g.matrixWorld); blastVisual(p, 4); sfx.explosion(p); });
-        scene.remove(g); ships.splice(i, 1);
+      // going down the way a holed boat does: it loses its buoyancy, the water's drag holds
+      // its fall to a slow, steady drop, the flooded bow takes it nose-down with a slow roll,
+      // air pours out of the breaches, its lights flicker and die; it lands on the seabed in a
+      // cloud of silt and lies there as a wreck
+      s.sink += dt;
+      g.rotation.order = "YXZ";
+      if (!s.landed) {
+        s.vy = (s.vy || 0) + (-1.9 - (s.vy || 0)) * Math.min(1, dt * .35);
+        s.y += s.vy * dt;
+        g.rotation.x += (.42 - g.rotation.x) * Math.min(1, dt * .25);
+        g.rotation.z += (.3 - g.rotation.z) * Math.min(1, dt * .18);
+        g.position.y = s.y; g.updateMatrixWorld();
+        // air streaming out of the breaches, and now and then a great burst of it
+        for (const bz of [9, 2, -6]) if (Math.random() < dt * 14) puff(new THREE.Vector3(rnd(-.4, .4), 1.4, bz + rnd(-1, 1)).applyMatrix4(g.matrixWorld), rnd(.12, .3), 3, 0xeafffa, new THREE.Vector3(rnd(-.2, .2), rnd(2.4, 3.6), rnd(-.2, .2)), 1.3, .65);
+        if (Math.random() < dt * .6) for (let k = 0; k < 14; k++) puff(new THREE.Vector3(rnd(-1, 1), 1.5, rnd(-10, 10)).applyMatrix4(g.matrixWorld), rnd(.3, .7), 3.5, 0xeafffa, new THREE.Vector3(rnd(-.6, .6), rnd(3, 5), rnd(-.6, .6)), 1.4, .7);
+        // the lights flicker, then go out
+        const on = s.sink < 3.5 && Math.random() > s.sink / 4;
+        s.lamp.visible = on; s.beam.visible = on;
+        // the seabed: it ploughs in nose-first and settles
+        const bowP = new THREE.Vector3(0, -1.6, 14).applyMatrix4(g.matrixWorld), gyB = terrainH(bowP.x, bowP.z), gy = terrainH(s.x, s.z);
+        if (bowP.y < gyB + .2 || s.y < gy + 1.4 || s.sink > 30) {
+          s.landed = true; s.restT = 0;
+          for (let k = 0; k < 26; k++) { const a = k / 26 * 6.28, p = new THREE.Vector3(s.x + Math.cos(a) * rnd(1, 6), Math.max(gy, gyB) + .4, s.z + Math.sin(a) * rnd(1, 14)); puff(p, rnd(1.4, 2.6), 5, 0x8a7a5a, new THREE.Vector3(Math.cos(a) * 1.5, rnd(.3, .9), Math.sin(a) * 1.5), 2.4, .5); }
+          T({ f: 48, f2: 22, dur: 1.6, vol: .7 * Math.max(.4, spatial(g.position).v) });
+          camShake = Math.max(camShake, .02 * clamp(1 - g.position.distanceTo(player.pos) / 70, 0, 1));
+        }
+      } else {
+        // the wreck: it settles onto its keel a little, a last trickle of air, then it fades from view
+        s.restT += dt;
+        g.rotation.x += (.12 - g.rotation.x) * Math.min(1, dt * .4); g.rotation.z += (.35 - g.rotation.z) * Math.min(1, dt * .3);
+        g.position.y += (Math.max(terrainH(s.x, s.z) + 1.2, s.y - 1) - g.position.y) * Math.min(1, dt * .5);
+        if (s.restT < 12 && Math.random() < dt * 3) puff(new THREE.Vector3(rnd(-.4, .4), 1.4, rnd(-8, 8)).applyMatrix4(g.matrixWorld), .15, 3, 0xeafffa, new THREE.Vector3(0, 2.6, 0), 1.3, .55);
+        if (s.restT > 24) { scene.remove(g); ships.splice(i, 1); }
       }
       return;
     }
@@ -7309,7 +7334,47 @@
     const tgt = player.pos.clone().setY(player.pos.y - .8), dist = g.position.distanceTo(tgt);
     s.turrets.forEach(tr => { tr.cd -= dt; if (tr.cd <= 0 && player.alive && active() && dist < 110) { tr.cd = rnd(4, 6.5) - Math.min(2, player.wave * .1); ufoFire(s, tr, tgt); } });
   }
-  function clearShips() { ships.slice().forEach(s => scene.remove(s.g)); ships.length = 0; shipRespawn = 0; }
+  const flotsam = [];
+  // the oil: a soft, ragged blot, thicker in patches, with a faint rainbow sheen at its edges
+  let _slickTex = null;
+  const slickTex = () => _slickTex || (_slickTex = canvasTex(256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    for (let n = 0; n < 26; n++) {
+      const x = w / 2 + rnd(-60, 60), y = h / 2 + rnd(-60, 60), r = rnd(30, 90), gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, "rgba(255,255,255,.35)"); gr.addColorStop(.7, "rgba(255,255,255,.12)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+    }
+  }));
+  function addWreckage(at, kind) {
+    const mats = kind === "wood" ? [0x5a3a22, 0x3e2816, 0x7a5a3a] : [0x5d646b, 0x3a3e44, 0xe0601e, 0xe8eaec];
+    for (let n = 0; n < (COARSE ? 6 : 14); n++) {
+      const sz = [rnd(.4, 2.2), rnd(.12, .4), rnd(.3, 1.2)], m = new THREE.Mesh(boxG(...sz), new THREE.MeshStandardMaterial({ color: pick(mats), roughness: .85, transparent: true }));
+      m.position.set(at.x + rnd(-8, 8), WATER_Y, at.z + rnd(-14, 14)); m.rotation.y = rnd(0, 6.28); scene.add(m);
+      flotsam.push({ piece: m, t: 0, life: rnd(30, 45), ph: rnd(0, 6), dx: rnd(-.25, .25), dz: rnd(-.25, .25), up: -rnd(1, 3) });
+    }
+  }
+  function stepFlotsam(dt) {
+    const tm = WATER_U.uTime.value;
+    for (let i = flotsam.length - 1; i >= 0; i--) {
+      const f = flotsam[i]; f.t += dt;
+      const fade = clamp((f.life - f.t) / 6, 0, 1);
+      if (f.slick) { const r = Math.min(16, 3 + f.t * .8); f.slick.scale.set(r, 1, r * 1.3); f.slick.material.opacity = .75 * Math.min(1, f.t / 4) * fade; }
+      if (f.foam && f.t < f.life && Math.random() < dt * 14 * (1 - f.t / f.life)) {
+        const p = f.foam.clone().add(new THREE.Vector3(rnd(-5, 5), 0, rnd(-8, 8)));
+        splash(p, rnd(.5, 1.2)); if (Math.random() < .4) puff(p.clone().setY(WATER_Y + .2), rnd(.6, 1.4), 1.6, 0xf2f6f8, new THREE.Vector3(0, rnd(.4, 1.2), 0), 2.2, .5);
+      }
+      if (f.piece) {
+        // it pops up from below, then rides the swell and drifts apart
+        f.up = Math.min(0, f.up + dt * 1.6);
+        f.piece.position.x += f.dx * dt; f.piece.position.z += f.dz * dt;
+        f.piece.position.y = WATER_Y + .05 + f.up + Math.sin(tm * 1.3 + f.ph) * .08;
+        f.piece.rotation.x = Math.sin(tm * .9 + f.ph) * .12; f.piece.rotation.z = Math.cos(tm * 1.1 + f.ph) * .12;
+        f.piece.material.opacity = fade;
+      }
+      if (f.t > f.life) { if (f.slick) { scene.remove(f.slick); f.slick.material.dispose(); } if (f.piece) { scene.remove(f.piece); f.piece.material.dispose(); } flotsam.splice(i, 1); }
+    }
+  }
+  function clearShips() { ships.slice().forEach(s => scene.remove(s.g)); ships.length = 0; shipRespawn = 0; flotsam.forEach(f => { if (f.slick) scene.remove(f.slick); if (f.piece) scene.remove(f.piece); }); flotsam.length = 0; }
   let shipRespawn = 0;
   const shipProxies = () => { const l = []; ships.forEach(s => { if (s.sink === 0) l.push(...s.proxies); }); return l; };
   function damageShip(s, amount, point) {
@@ -7325,10 +7390,20 @@
     const what = { ufo: ["Saucer down", "SAUCER SHOT DOWN", "another will come out of the sky"], sub: ["Submarine sunk", "SUBMARINE SUNK", "another will come up from the deep"], deepsub: ["Submarine destroyed", "SUBMARINE DESTROYED", "another will come out of the deep"],
       galleon: [s.ghost ? "Ghost ship sunk" : "Galleon sunk", s.ghost ? "GHOST SHIP SUNK" : "GALLEON SUNK", s.ghost ? "it will rise again" : "another will sail in"], tank: ["Tank destroyed", "TANK DESTROYED", "another will roll in"], heli: ["Helicopter down", "HELICOPTER SHOT DOWN", "another will fly in"] }[s.kind] || ["Warship sunk", "WARSHIP SUNK", "another will come over the horizon"];
     notify(what[0], "#ffd23a", "+150"); banner(what[1], what[2]);
-    if (s.kind === "deepsub") { s.vy = 0; blastVisual(s.g.position.clone(), 4.5); sfx.explosion(s.g.position.clone()); hullGroan(s.g.position.clone(), 9); shipRespawn = 40; return; }
+    if (s.kind === "deepsub") { s.vy = -.2; blastVisual(s.g.position.clone(), 4.5); sfx.explosion(s.g.position.clone()); hullGroan(s.g.position.clone(), 10); later(9, () => hullGroan(s.g.position.clone(), 8)); shipRespawn = 40; return; }
     if (s.kind === "heli" || s.kind === "tank") { s.vy = 0; if (s.ropes) s.ropes.visible = false; blastVisual(s.g.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 4.5); sfx.explosion(s.g.position.clone()); if (s.kind === "tank") { s.burn = 1; explode(s.g.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 4, 1, -1); } shipRespawn = 40; return; }
     if (s.kind === "ufo") { s.vy = 0; s.beam.visible = false; sfx.explosion(s.g.position.clone()); blastVisual(s.g.position.clone(), 4); shipRespawn = 45; return; }
-    for (let i = 0; i < 6; i++) later(i * .35, () => { const lp = new THREE.Vector3(rnd(-1.5, 1.5), 2 + rnd(0, 2), rnd(-12, 12)).applyMatrix4(s.g.matrixWorld); blastVisual(lp, 3.5 + rnd(0, 2)); sfx.explosion(lp); });
+    // the first blasts, then secondary explosions as fires reach the magazines and fuel
+    for (let i = 0; i < 4; i++) later(i * .35, () => { const lp = new THREE.Vector3(rnd(-1.5, 1.5), 2 + rnd(0, 2), rnd(-12, 12)).applyMatrix4(s.g.matrixWorld); blastVisual(lp, 3.5 + rnd(0, 2)); sfx.explosion(lp); });
+    for (let i = 0; i < 4; i++) later(2.5 + i * rnd(1.2, 2.2), () => { if (!ships.includes(s)) return; const lp = new THREE.Vector3(rnd(-1.2, 1.2), 2.5, rnd(-10, 10)).applyMatrix4(s.g.matrixWorld); if (lp.y > WATER_Y) { blastVisual(lp, 2.5 + rnd(0, 1.5)); sfx.explosion(lp); } });
+    // she groans as she goes, the hull bending as it floods, and again as the bow lifts
+    hullGroan(s.g.position.clone(), 10); later(9, () => { if (ships.includes(s)) hullGroan(s.g.position.clone(), 11); });
+    s.listDir = Math.random() < .5 ? 1 : -1; s.g.rotation.order = "YXZ";
+    // an oil slick spreading over the water where she lies
+    const slick = new THREE.Mesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: slickTex(), color: 0x101014, transparent: true, opacity: 0, depthWrite: false }));
+    slick.rotation.y = rnd(0, 6.28);
+    slick.position.set(s.g.position.x, WATER_Y + .03, s.g.position.z); slick.renderOrder = 2; scene.add(slick);
+    flotsam.push({ slick, t: 0, life: 50 });
     shipRespawn = 45;
   }
   // a shell from a turret: a ballistic arc aimed with a little lead and a little error
@@ -7359,14 +7434,42 @@
       if (s.kind === "deepsub") { stepDeepSub(s, dt, i); continue; }
       if (s.kind === "tank") { stepTank(s, dt, i); continue; }
       if (s.sink > 0) {
-        // sinking: fires and smoke, settling by the stern, then slipping under
+        // sinking, the way a ship really goes: first she floods and takes on a list, settling
+        // lower; then the stern fills, the bow lifts clear of the water and climbs; at last
+        // she slides under stern-first, the sea churning white where the hull goes in, and
+        // leaves bubbles, foam and wreckage behind on the surface
         s.sink += dt;
-        g.rotation.x = Math.min(.32, s.sink * .04); g.rotation.z = Math.sin(s.sink * .3) * .06 + s.sink * .012;
-        g.position.y = WATER_Y - s.sink * s.sink * .05;
-        if (Math.random() < dt * 8) { const p = new THREE.Vector3(rnd(-1.5, 1.5), 3, rnd(-12, 12)).applyMatrix4(g.matrixWorld); if (p.y > WATER_Y) puff(p, rnd(1.5, 2.5), 3.5, 0x26231f, new THREE.Vector3(rnd(-.3, .3), rnd(2, 3.5), rnd(-.3, .3)), 2.6, .5); }
-        if (s.sink < 6 && Math.random() < dt * 4) { const p = new THREE.Vector3(rnd(-1.5, 1.5), 2.6, rnd(-10, 10)).applyMatrix4(g.matrixWorld); if (p.y > WATER_Y) puff(p, 1, .6, 0xff8a2a, new THREE.Vector3(0, 2.5, 0), 2, .7); }
-        s.wake.material.uniforms.uK.value = Math.max(0, 1 - s.sink);
-        if (s.sink > 14) { scene.remove(g); ships.splice(i, 1); }
+        const k = s.sink, sm = x => x * x * (3 - 2 * x), ph = (a, b) => sm(clamp((k - a) / (b - a), 0, 1));
+        const list = .2 * ph(0, 6) * s.listDir * (1 - .5 * ph(10, 16));
+        const pitch = -.07 * ph(1, 6) - .5 * ph(6, 14) - .55 * ph(14, 21);
+        const drop = 1.3 * ph(0, 6) + 6 * ph(6, 14) + 26 * Math.pow(ph(14, 25), 1.6);
+        g.rotation.set(pitch, s.heading, list + Math.sin(k * .5) * .015);
+        g.position.y = WATER_Y - drop;
+        g.updateMatrixWorld();
+        const L2 = s.kind === "galleon" ? 13 : s.kind === "sub" ? 14 : SHIP_L / 2;
+        // fire and smoke from whatever is still above the water
+        if (Math.random() < dt * 8) { const p = new THREE.Vector3(rnd(-1.5, 1.5), 3, rnd(-L2 * .8, L2 * .8)).applyMatrix4(g.matrixWorld); if (p.y > WATER_Y + .5) puff(p, rnd(1.5, 2.5), 3.5, 0x26231f, new THREE.Vector3(rnd(-.3, .3), rnd(2, 3.5), rnd(-.3, .3)), 2.6, .5); }
+        if (k < 12 && Math.random() < dt * 4) { const p = new THREE.Vector3(rnd(-1.5, 1.5), 2.6, rnd(-L2 * .7, L2 * .7)).applyMatrix4(g.matrixWorld); if (p.y > WATER_Y + .3) puff(p, 1, .6, 0xff8a2a, new THREE.Vector3(0, 2.5, 0), 2, .7); }
+        // where the hull meets the water: spray and white churn, more as she goes down faster
+        const churn = k < 14 ? 3 : 10;
+        if (Math.random() < dt * churn) {
+          for (let tries = 0; tries < 6; tries++) {
+            const p = new THREE.Vector3(rnd(-1.8, 1.8), rnd(-2, 3), rnd(-L2, L2)).applyMatrix4(g.matrixWorld);
+            if (Math.abs(p.y - WATER_Y) < .8) { p.y = WATER_Y; splash(p, k < 14 ? .7 : 1.3); puff(p.clone().setY(WATER_Y + .3), rnd(.8, 1.6), 1.6, 0xf2f6f8, new THREE.Vector3(rnd(-.5, .5), rnd(.6, 1.6), rnd(-.5, .5)), 2.4, .55); break; }
+          }
+        }
+        // the funnel going under: a burst of steam
+        if (!s.steamed && k > 13 && !s.kind) { const sp = s.stackP.clone().applyMatrix4(g.matrixWorld); if (sp.y < WATER_Y + .5) { s.steamed = true; for (let n = 0; n < 12; n++) puff(sp.clone().setY(WATER_Y + .5), rnd(1.5, 3), 3, 0xe8ecef, new THREE.Vector3(rnd(-1.5, 1.5), rnd(2, 4), rnd(-1.5, 1.5)), 2.6, .6); } }
+        s.wake.material.uniforms.uK.value = Math.max(0, 1 - k); if (s.bow) s.bow.material.uniforms.uK.value = Math.max(0, 1 - k);
+        // gone: the highest point of the hull is under, so the wreckage and the foam take over
+        const top = new THREE.Vector3(0, 2, L2).applyMatrix4(g.matrixWorld).y;
+        if (!s.under && (top < WATER_Y - 2 || k > 26)) {
+          s.under = true; g.visible = false;
+          const at = new THREE.Vector3(g.position.x, WATER_Y, g.position.z);
+          flotsam.push({ foam: at, t: 0, life: 14 });
+          addWreckage(at, s.kind === "galleon" ? "wood" : "steel");
+        }
+        if (s.under) { scene.remove(g); ships.splice(i, 1); }
         continue;
       }
       // steaming: a lane across the bay, turning at each end; a new ship sails in from the horizon first
@@ -12168,7 +12271,7 @@
     updateCorpses(dt); stepBossBar();
 
     windU.value += dt; stepWater(dt);
-    stepMissiles(dt); stepGrenades(dt); stepSpecials(dt); stepPickups(dt); stepDrops(dt); stepDog(dt); stepFires(dt); stepShips(dt); stepTrees(dt);
+    stepMissiles(dt); stepGrenades(dt); stepSpecials(dt); stepPickups(dt); stepDrops(dt); stepDog(dt); stepFires(dt); stepShips(dt); stepFlotsam(dt); stepTrees(dt);
 
     // chests & effects
     stepChests(dt);
