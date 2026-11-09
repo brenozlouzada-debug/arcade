@@ -453,6 +453,16 @@ The game's own update in that fight went from about 8.8 ms a frame to about 3.5 
 - **A calmer colour grade.** The final pass used to push saturation up and add contrast. Now it pulls saturation down a little and keeps contrast gentle, so greens, skies and sand look like the real thing rather than paint.
 - **Grass and ground with real variety.** Grass is less saturated, and more of it is dry, gone to seed or in shade. The ground's own colours (soil, sand, snow, ash) are toned down toward their natural greys.
 
+## Ships sink the way real ones do
+
+- **Warships, galleons and the ghost ship** go down in stages over about 25 seconds instead of just dropping:
+  1. **Flooding:** the first explosions, then secondary blasts as fires reach fuel and ammunition. She takes on water, lists to one side and settles lower, burning and smoking.
+  2. **Stern first:** the stern floods and the bow lifts clear of the water and keeps climbing; when the funnel goes under there's a burst of steam.
+  3. **Going under:** she slides down stern-first at a steep angle, the sea churning white and spraying where the hull goes in.
+  4. **Afterwards:** bubbles and foam boil up where she went down, a soft, ragged oil slick spreads over the water, and wreckage (plates, planks, a lifeboat-orange piece) pops up from below and drifts apart on the swell before fading.
+- **The groan:** a sinking warship, galleon or ghost ship makes the same deep groan of bending steel as a submarine, once as she floods and again as the bow lifts.
+- **Submarines** lose their buoyancy and sink slowly against the water's drag, nosing down with a slow roll. Air streams out of three breaches, with now and then a great burst; the lights flicker and die. The sub ploughs into the seabed nose-first in a cloud of silt with a heavy thud you feel if you're close, settles onto its keel and lies there as a wreck, a last trickle of air rising, before it fades away. The hull groans twice on the way down.
+
 ## Submarines: underwater only, rebuilt, and they groan as they die
 
 - **Only under the sea.** Submarines now appear only on the underwater maps (Coral Reef, Sunken Temple, Kelp Forest, Abyssal Trench, Frozen Depths). Mushroom Grove, the one surface map that had one, now has aliens and their saucer, which suits its glowing purple grove, and the game can never put a submarine on the surface again.
